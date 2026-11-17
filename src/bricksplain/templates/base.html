@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bricksplain</title>
+<style>
+ body { font-family: system-ui, sans-serif; margin: 2rem; }
+ .error { background: #fde8e8; border: 1px solid #e0a0a0; padding: .6rem; }
+ .warning { background: #fff6dd; border: 1px solid #e0c870; padding: .6rem; }
+ table.src { border-collapse: collapse; font-family: ui-monospace, monospace; font-size: 13px; width: 100%; }
+ table.src td { padding: 0 .5rem; white-space: pre; }
+ td.ln { color: #888; text-align: right; user-select: none; width: 3rem; }
+ tr.hl { background: #fff3a3; }
+ tr.cell-head td { background: #e8eef7; font-weight: 600; padding: .3rem .5rem; border-top: 2px solid #9ab; }
+</style>
+</head>
+<body>
+{% block body %}{% endblock %}
+</body>
+</html>

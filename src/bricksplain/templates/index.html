@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Bricksplain</h1>
+<form action="/source" method="get">
+  <p><label>Notebook path <input name="path" value="{{ path }}" size="70"></label></p>
+  <p>
+    <label>Cell <input name="cell" size="4"></label>
+    <label>Line Range from <input name="start" size="5"></label>
+    <label>to <input name="end" size="5"></label>
+  </p>
+  <button type="submit">Open Source Viewer</button>
+</form>
+{% endblock %}

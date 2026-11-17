@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block body %}
+<p><a href="/?path={{ path | urlencode }}">&larr; Back</a></p>
+<h1>Source Viewer</h1>
+{% if error %}
+<p class="error">{{ error }}</p>
+{% else %}
+<p><code>{{ notebook.path }}</code></p>
+{% for w in notebook.warnings %}<p class="warning">{{ w }}</p>{% endfor %}
+{% if message %}<p class="error">{{ message }}</p>{% endif %}
+<table class="src">
+{% for c in notebook.cells %}
+  <tr class="cell-head" id="cell-{{ c.number }}" data-kind="{{ c.kind }}"><td colspan="2">Cell {{ c.number }} &middot; {{ c.kind }} &middot; lines {{ c.start }}-{{ c.end }}</td></tr>
+  {% for line in c.lines %}{% set n = c.start + loop.index0 %}
+  <tr {% if n in highlight %}class="hl"{% endif %} data-line="{{ n }}" id="L{{ n }}"><td class="ln">{{ n }}</td><td>{{ line }}</td></tr>
+  {% endfor %}
+{% endfor %}
+</table>
+{% if first_highlight %}
+<script>document.getElementById("L{{ first_highlight }}").scrollIntoView({block: "center"});</script>
+{% endif %}
+{% endif %}
+{% endblock %}
