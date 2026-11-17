@@ -167,3 +167,4 @@ testdata/
 .env
 secrets/
 
+.logs/
