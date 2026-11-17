@@ -5,13 +5,16 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from . import notebook as nb
+from .config import Config
 
 DEFAULT_PATH = "testdata/cash_application_engine.py"
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+TEMPLATE_DIR = str(Path(__file__).parent / "templates")
 
 
-def create_app(default_path: str = DEFAULT_PATH) -> FastAPI:
+def create_app(config: Config, default_path: str = DEFAULT_PATH) -> FastAPI:
     app = FastAPI(title="Bricksplain")
+    templates = Jinja2Templates(directory=TEMPLATE_DIR)
+    templates.env.globals["llm_label"] = f"{config.provider} / {config.model}"
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, path: str | None = None):

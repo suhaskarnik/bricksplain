@@ -89,3 +89,9 @@ def test_uppercase_py_extension_accepted(client, tmp_path):
     p = tmp_path / "NB.PY"
     p.write_text("a = 1\n")
     assert "Cell 1" in view(client, p).text
+
+
+def test_resolved_provider_and_model_shown_but_not_key(client, fixtures):
+    for r in (client.get("/"), view(client, fixtures / "small.py")):
+        assert "groq / llama-3.3-70b" in r.text
+        assert "test-key" not in r.text
