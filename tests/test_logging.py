@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from bricksplain.config import Config
+from bricksplain.config import Config, ConfigError
 from bricksplain.logging_setup import setup_logging
 
 SECRET = "super-secret-key-value"
@@ -18,10 +18,13 @@ def cfg():
 @pytest.fixture(autouse=True)
 def _reset_logger():
     yield
-    logger = logging.getLogger("bricksplain")
-    for h in list(logger.handlers):
-        h.close()
-        logger.removeHandler(h)
+    for name in ("bricksplain", "uvicorn.error", "uvicorn.access"):
+        logger = logging.getLogger(name)
+        for h in list(logger.handlers):
+            h.close()
+            logger.removeHandler(h)
+    logging.getLogger("bricksplain").setLevel(logging.NOTSET)
+    logging.getLogger("bricksplain").propagate = True
 
 
 def start(cfg, tmp_path, **env):
@@ -130,3 +133,32 @@ def test_restarting_does_not_duplicate_lines(cfg, tmp_path):
     path = start(cfg, tmp_path, BRICKSPLAIN_LOG_PATH=str(tmp_path / "y"))
     logging.getLogger("bricksplain.test").info("once")
     assert path.read_text().count("once") == 1
+
+
+def test_invalid_log_level_is_a_clear_startup_error(cfg, tmp_path):
+    with pytest.raises(ConfigError, match="LOG_LEVEL"):
+        start(cfg, tmp_path, BRICKSPLAIN_LOG_PATH=str(tmp_path / "l"), LOG_LEVEL="loud")
+
+
+def test_unwritable_location_is_a_clear_startup_error(cfg, tmp_path):
+    blocker = tmp_path / "file"
+    blocker.write_text("")
+    with pytest.raises(ConfigError, match="log file"):
+        start(cfg, tmp_path, BRICKSPLAIN_LOG_PATH=str(blocker))
+
+
+def test_two_starts_in_same_second_get_separate_files(cfg, tmp_path):
+    env = {"BRICKSPLAIN_LOG_PATH": str(tmp_path / "l")}
+    assert start(cfg, tmp_path, **env) != start(cfg, tmp_path, **env)
+
+
+def test_relative_xdg_state_home_is_ignored(cfg, tmp_path):
+    path = start(cfg, tmp_path, XDG_STATE_HOME="relative/dir")
+    assert path.parent == tmp_path / "home" / ".local" / "state" / "bricksplain"
+
+
+def test_server_errors_reach_the_redacted_log(cfg, tmp_path):
+    path = start(cfg, tmp_path, BRICKSPLAIN_LOG_PATH=str(tmp_path / "l"))
+    logging.getLogger("uvicorn.error").error("crash %s", SECRET)
+    text = path.read_text()
+    assert "crash" in text and SECRET not in text
