@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -5,11 +6,13 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from . import notebook as nb
+from .cache import DocCache
 from .config import Config
 from .jobs import JobRunner
 from .llm import LLMClient, OpenAICompatClient
 
 DEFAULT_PATH = "testdata/cash_application_engine.py"
+DEFAULT_CACHE_DIR = ".cache/bricksplain"
 TEMPLATE_DIR = str(Path(__file__).parent / "templates")
 
 
@@ -17,8 +20,13 @@ def create_app(
     config: Config,
     default_path: str = DEFAULT_PATH,
     llm_client: LLMClient | None = None,
+    cache_dir: Path | None = None,
 ) -> FastAPI:
-    runner = JobRunner(llm_client or OpenAICompatClient(config))
+    cache_dir = cache_dir or Path(
+        os.environ.get("BRICKSPLAIN_CACHE_PATH") or DEFAULT_CACHE_DIR
+    )
+    cache = DocCache(cache_dir, f"{config.provider}/{config.model}")
+    runner = JobRunner(llm_client or OpenAICompatClient(config), cache)
     app = FastAPI(title="Bricksplain")
     templates = Jinja2Templates(directory=TEMPLATE_DIR)
     templates.env.globals["llm_label"] = f"{config.provider} / {config.model}"
@@ -30,7 +38,7 @@ def create_app(
         )
 
     @app.post("/generate", response_class=HTMLResponse)
-    def generate(request: Request, path: str = Form("")):
+    def generate(request: Request, path: str = Form(""), regenerate: str = Form("")):
         ctx: dict = {"path": path, "job": None, "error": None}
         try:
             notebook = nb.load(path)
@@ -38,7 +46,7 @@ def create_app(
             ctx["error"] = str(e)
             return templates.TemplateResponse(request, "index.html", ctx)
         ctx["warnings"] = notebook.warnings
-        ctx["job"] = runner.start(path, notebook)
+        ctx["job"] = runner.start(path, notebook, regenerate=bool(regenerate))
         return templates.TemplateResponse(request, "index.html", ctx)
 
     @app.get("/jobs/{job_id}/{audience}", response_class=HTMLResponse)

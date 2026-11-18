@@ -3,7 +3,8 @@
 <h1>Bricksplain</h1>
 <form action="/source" method="get">
   <p><label>Notebook path <input name="path" value="{{ path }}" size="70"></label>
-  <button type="submit" formaction="/generate" formmethod="post">Generate</button></p>
+  <button type="submit" formaction="/generate" formmethod="post">Generate</button>
+  {% if job %}<button type="submit" name="regenerate" value="1" formaction="/generate" formmethod="post">Regenerate</button>{% endif %}</p>
   <p>
     <label>Cell <input name="cell" size="4"></label>
     <label>Line Range from <input name="start" size="5"></label>

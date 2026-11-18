@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from .audience_doc import AUDIENCES, Audience, AudienceDoc, DocError, generate_doc
+from .cache import DocCache
 from .llm import LLMClient, LLMError
 from .notebook import Notebook
 
@@ -31,19 +32,20 @@ class Job:
 
 
 class JobRunner:
-    def __init__(self, llm: LLMClient):
+    def __init__(self, llm: LLMClient, cache: DocCache):
         self._llm = llm
+        self._cache = cache
         self._lock = threading.Lock()
         self.jobs: dict[str, Job] = {}
 
-    def start(self, path: str, notebook: Notebook) -> Job:
+    def start(self, path: str, notebook: Notebook, regenerate: bool = False) -> Job:
         job = Job(uuid.uuid4().hex, path, notebook)
         job.docs = {a.key: DocState(a) for a in AUDIENCES}
         with self._lock:
             self.jobs[job.id] = job
         for a in AUDIENCES:
             threading.Thread(
-                target=self._run, args=(job, job.docs[a.key]), daemon=True
+                target=self._run, args=(job, job.docs[a.key], regenerate), daemon=True
             ).start()
         return job
 
@@ -51,10 +53,16 @@ class JobRunner:
         with self._lock:
             return self.jobs.get(job_id)
 
-    def _run(self, job: Job, ds: DocState) -> None:
+    def _run(self, job: Job, ds: DocState, regenerate: bool) -> None:
         ds.state = RUNNING
         try:
-            ds.doc = generate_doc(self._llm, job.notebook, ds.audience)
+            if regenerate:
+                log.info("cache bypassed (regenerate): %s", ds.audience.key)
+            doc = None if regenerate else self._cache.get(job.notebook, ds.audience)
+            if doc is None:
+                doc = generate_doc(self._llm, job.notebook, ds.audience)
+                self._cache.put(job.notebook, ds.audience, doc)
+            ds.doc = doc
             ds.state = DONE
         except (LLMError, DocError) as e:
             log.error("%s doc failed: %s", ds.audience.key, e)

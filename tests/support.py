@@ -40,9 +40,9 @@ def wait_done(
     return out
 
 
-def generate(client: TestClient, path: str):
+def generate(client: TestClient, path: str, **form: str):
     """POST /generate, wait for all docs, return a response whose text has everything."""
-    r = client.post("/generate", data={"path": path})
+    r = client.post("/generate", data={"path": path, **form})
     docs = wait_done(client, r.text)
     return SimpleNamespace(
         status_code=r.status_code,
