@@ -104,3 +104,15 @@ def test_doc_with_dropped_claims_is_not_cached(fixtures):
     seen = len(llm.seen)
     generate(client, path)
     assert llm.seen[seen:].count("manager") >= 1
+
+
+def test_failing_claim_content_is_logged_for_diagnosis(fixtures, caplog):
+    path = str(fixtures / "small.py")
+    bad = {"summary": [fact("x is one.", quote="made up quote")]}
+    client = make_client(
+        by_audience({"manager": bad, "developer": {}, "agent": {}}), path
+    )
+    with caplog.at_level(logging.WARNING, logger="bricksplain"):
+        generate(client, path)
+    assert "made up quote" in caplog.text
+    assert "x is one." in caplog.text

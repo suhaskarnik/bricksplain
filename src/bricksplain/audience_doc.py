@@ -159,6 +159,13 @@ def build_doc(raw: str, notebook: Notebook, audience: Audience) -> AudienceDoc:
                 item = Item.model_validate(entry)
             except ValidationError:
                 log.warning("failing claim in %s/%s: malformed item", audience.key, key)
+                log.warning(
+                    "failing claim content in %s/%s: %r",
+                    audience.key,
+                    key,
+                    entry,
+                    extra={"llm_response": True},
+                )
                 failures.append(f"{key}: an item was malformed")
                 dropped += 1
                 continue
@@ -166,6 +173,15 @@ def build_doc(raw: str, notebook: Notebook, audience: Audience) -> AudienceDoc:
             if failed:
                 reason = "; ".join(failed)
                 log.warning("failing claim in %s/%s: %s", audience.key, key, reason)
+                # Claim text and quotes are LLM output: only logged on opt-in.
+                log.warning(
+                    "failing claim content in %s/%s: text=%r citations=%r",
+                    audience.key,
+                    key,
+                    item.text,
+                    [c.model_dump() for c in item.citations],
+                    extra={"llm_response": True},
+                )
                 failures.append(f"{key}: {reason}")
                 dropped += 1
             else:
