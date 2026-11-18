@@ -4,7 +4,7 @@
 
 **Blocked by:** 09
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] A hand-written Notebook from an unrelated domain (such as an ETL or ML feature pipeline) is added as a fixture, with planted quirks
 - [ ] Eval Cases for it assert that the planted quirks are surfaced
