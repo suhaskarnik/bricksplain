@@ -121,7 +121,13 @@ def numbered_listing(notebook: Notebook) -> str:
 
 
 def _norm(s: str) -> str:
-    return " ".join(s.split())
+    """Collapse whitespace and ignore the `# MAGIC` prefix Databricks puts on
+    every line of a markdown/SQL Cell, which the LLM naturally leaves out."""
+    lines = (
+        line.strip().removeprefix("# MAGIC").strip() if "# MAGIC" in line else line
+        for line in s.splitlines()
+    )
+    return " ".join(" ".join(lines).split())
 
 
 def verify(citation: Citation, notebook: Notebook) -> str | None:

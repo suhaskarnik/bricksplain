@@ -116,3 +116,18 @@ def test_failing_claim_content_is_logged_for_diagnosis(fixtures, caplog):
         generate(client, path)
     assert "made up quote" in caplog.text
     assert "x is one." in caplog.text
+
+
+def test_quote_without_magic_prefix_verifies_against_markdown_cell(fixtures):
+    path = str(fixtures / "small.py")
+    claim = {
+        "type": "fact",
+        "text": "The notebook has a title and notes.",
+        "citations": [
+            {"cell": 1, "start": 3, "end": 4, "quote": "## Title\nsome notes"}
+        ],
+    }
+    llm = by_audience({"manager": {"summary": [claim]}, "developer": {}, "agent": {}})
+    r = generate(make_client(llm, path), path)
+    assert "The notebook has a title and notes." in r.docs["manager"]
+    assert llm.seen.count("manager") == 1  # no retry: nothing failed

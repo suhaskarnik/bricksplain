@@ -12,4 +12,4 @@ fmt:
 
 # Serve with logs inside the project so an AI assistant can read them.
 serve-debug:
-    BRICKSPLAIN_LOG_PATH=.logs uv run bricksplain
+    BRICKSPLAIN_LOG_LLM_RESPONSES=1 BRICKSPLAIN_LOG_PATH=.logs uv run bricksplain
