@@ -22,6 +22,8 @@ just serve        # http://127.0.0.1:8000
 | `just eval` | Live evaluation against the configured provider (not part of `just test`) |
 | `just lint` / `just fmt` | Ruff check / format |
 
+Note: `just` is a convenience utility here; it can be installed from [GitHub](https://github.com/casey/just). Alternatively, you can open the justfile and run the relevant recipes from the command line.
+
 ## Design decisions
 
 ### 1. Every Claim carries a Verified Citation
@@ -75,9 +77,37 @@ Prompts and Notebook content are never logged. A formatter masks the configured 
 
 Rejected: *logging prompts for debuggability* (private code ends up in log files); *redacting by call site* (one forgotten call leaks a key).
 
+### 8. Secure By Design
+
+Two sets of LLMs were involved in this solution: Claude built it using Claude Code, and Gemini (or Groq/OpenRouter models) is used to generate the actual documents. Neither of these sets can see the secret, which in this case is the LLM API key. This is structurally enforced, not via prompt. The secret is stored in a different directory outside this project, and therefore not visible to Claude Code. This secret is also not sent to Gemini/Groq/OpenRouter. 
+
+There is still one shortcut that was taken though, see the next steps for more details. 
+
 ## Layout
 
 - `src/bricksplain/`: the app (`notebook.py` parsing, `audience_doc.py` schema, verification and Markdown, `jobs.py` concurrent generation, `cache.py`, `llm.py`, `config.py`, `logging_setup.py`, `app.py`)
 - `evals/`: Eval Cases, the live runner and the generality fixture
 - `tests/`: the offline suite
 - `testdata/`: the sample Notebook (git-ignored)
+
+### 8. Outputs
+
+The code was executed with the provided notebook, and the results are in the `outputs` directory. 
+
+### 9. Next Steps
+
+What I'd do next:
+
+| Improvement | Type | Affects | Description |
+|---|---|---|---|
+| Fix Proposals | Functional | Business Value | Along with providing the concerns and severity, propose fixes to the identified problems. Add a HITL gate that allows fixing as well, subject to org quality controls |
+| Enhance eval suite | Non-Functional | Reliability, Cost Control | Add more evals to score behaviour against other types of notebooks (ML training runs, other business domains etc). This enables switching to cheaper models with an evidence-based approach |
+| Observability | Non-Functional | Reliability, Logging, Cost Control | Use tools like LangFuse or MLFlow to monitor how many tokens are being consumed and the quality of answers | 
+| AI Gateway Integration | Non-Functional | Reliability, Model Flexibility, Cost Control | Use an AI Gateway such as Unity Gateway or Bifrost etc. This allows an enterprise to control (white/blacklist) models, observe which models are being used, and attribute usage (and thus costs) to teams |
+| UX Improvements | Non-Functional |  UX | Responsive (desktop/tablet/phone) UI, Dark mode. Make the Markdown file more readable |
+| Secret vaulting | Non-Functional | Security | Currently the secret is stored as a `.env` file. It's outside the repo, so it is neither in git nor is it visible to a coding agent; however, a better security posture is for it to be stored in a proper secret store in Azure Key Vault, AWS Secrets Mgr or Hashicorp Vault | 
+| Citation coverage metrics | Non-Functional | Reliability, Trust | Report the share of Notebook lines and Cells that no Claim cites, so a reader can see what the doc does not cover. Today every statement can verify while important parts of the Notebook are silently omitted |
+| Large Notebook handling | Non-Functional | Reliability, Scalability, Cost Control | Add chunking or a map-reduce pass for Notebooks that exceed the model's context window or the free-tier token limits. Citations must still verify against the original Cells, not the chunks |
+| Prompt injection evals | Non-Functional | Security, Reliability | Notebook content is untrusted input to the LLM; a comment such as "ignore prior instructions" could alter the output. Add Eval Cases with planted injections and check that Citations still verify and no uncited prose appears |
+| Semantic Verification | Non-Functional | Trust, Cost Control | The verifier proves that a quote exists, not that the Claim follows from it. Add a check that the quote actually supports the Claim, using a Decision Model like Jev, which is cheaper than a general-purpose LLM. Claims that fail are dropped or retried like any other failed Citation |
+| CI mode | Functional | Developer Experience, Business Value | A CLI or GitHub Action that regenerates the Audience Docs on a pull request and fails the check if a Notebook changed and its docs are stale |
