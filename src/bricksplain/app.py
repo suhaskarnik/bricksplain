@@ -2,10 +2,11 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from . import notebook as nb
+from .audience_doc import to_markdown
 from .cache import DocCache
 from .config import Config
 from .jobs import JobRunner
@@ -56,6 +57,20 @@ def create_app(
             raise HTTPException(404, "Unknown job or audience.")
         return templates.TemplateResponse(
             request, "_doc.html", {"job": job, "ds": job.docs[audience]}
+        )
+
+    @app.get("/jobs/{job_id}/{audience}/download.md")
+    def job_markdown(job_id: str, audience: str):
+        job = runner.get(job_id)
+        ds = job.docs.get(audience) if job else None
+        if ds is None or ds.doc is None:
+            raise HTTPException(404, "Unknown job or audience, or doc not ready.")
+        return Response(
+            to_markdown(ds.doc, ds.audience, job.path),
+            media_type="text/markdown; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="bricksplain-{audience}.md"'
+            },
         )
 
     @app.get("/source", response_class=HTMLResponse)

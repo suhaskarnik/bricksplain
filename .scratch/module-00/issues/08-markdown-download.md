@@ -4,7 +4,7 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Each Audience Doc has a Download .md button
 - [ ] The Markdown preserves the section skeleton and distinguishes Fact, Concern and Context

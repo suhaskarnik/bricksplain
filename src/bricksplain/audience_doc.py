@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from importlib import resources
 from typing import Literal
+from urllib.parse import quote
 
 from pydantic import BaseModel, StrictInt, ValidationError, model_validator
 
@@ -234,3 +235,30 @@ def generate_doc(llm: LLMClient, notebook: Notebook, audience: Audience) -> Audi
             retried.dropped,
         )
     return retried if retried.dropped <= doc.dropped else doc
+
+
+def _cite_label(c: Citation) -> str:
+    lines = f"line {c.start}" if c.start == c.end else f"lines {c.start}-{c.end}"
+    return f"Cell {c.cell}, {lines}"
+
+
+def to_markdown(doc: AudienceDoc, audience: Audience, path: str) -> str:
+    """Render an Audience Doc as Markdown; Citations are app-relative links."""
+    out = [f"# {audience.title} Audience Doc", "", f"Notebook: `{path}`", ""]
+    for s in doc.sections:
+        out += [f"## {s.title}", ""]
+        for item in s.items:
+            if item.type == "context":
+                label = "Context (not from the Notebook)"
+            elif item.type == "concern":
+                label = f"Concern ({item.severity})"
+            else:
+                label = "Fact"
+            links = " ".join(
+                f"[{_cite_label(c)}](/source?path={quote(path, safe='')}"
+                f"&cell={c.cell}&start={c.start}&end={c.end})"
+                for c in item.citations
+            )
+            out.append(f"- **{label}** {item.text} {links}".rstrip())
+        out.append("")
+    return "\n".join(out)

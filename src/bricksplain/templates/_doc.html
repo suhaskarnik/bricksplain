@@ -4,6 +4,7 @@
 {% elif ds.state != "done" %}<p class="status">{{ ds.state | capitalize }}&hellip;</p>
 {% else %}
 {% set doc = ds.doc %}
+<p><a class="download" href="/jobs/{{ job.id }}/{{ ds.audience.key }}/download.md" download>Download .md</a></p>
 {% if doc.dropped %}<p class="warning">{{ doc.dropped }} claim{{ "s" if doc.dropped != 1 }} dropped: {{ "its" if doc.dropped == 1 else "their" }} citations could not be verified against the Notebook.</p>{% endif %}
 {% for s in doc.sections %}
 <section>
