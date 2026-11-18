@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from . import notebook as nb
 from .config import Config
 from .llm import LLMClient, LLMError, OpenAICompatClient
-from .manager_doc import DocError, build_doc, load_prompt, numbered_listing
+from .manager_doc import DocError, generate_manager_doc
 
 DEFAULT_PATH = "testdata/cash_application_engine.py"
 TEMPLATE_DIR = str(Path(__file__).parent / "templates")
@@ -39,8 +39,7 @@ def create_app(
             return templates.TemplateResponse(request, "index.html", ctx)
         ctx["warnings"] = notebook.warnings
         try:
-            raw = llm.complete(load_prompt("manager"), numbered_listing(notebook))
-            ctx["doc"] = build_doc(raw, notebook)
+            ctx["doc"] = generate_manager_doc(llm, notebook)
         except (LLMError, DocError) as e:
             ctx["error"] = f"The Manager doc could not be generated: {e}"
         return templates.TemplateResponse(request, "index.html", ctx)

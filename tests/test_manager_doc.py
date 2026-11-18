@@ -229,3 +229,98 @@ def test_google_provider_posts_to_google_url_with_model_verbatim():
     assert seen["body"]["model"] == "gemini-2.5-flash"
     assert seen["body"]["response_format"] == {"type": "json_object"}
     assert seen["auth"] == "Bearer g-key"
+
+
+class SeqLLM:
+    """Returns/raises the queued outputs in order."""
+
+    def __init__(self, *outputs):
+        self.outputs = list(outputs)
+        self.calls = []
+
+    def complete(self, system: str, user: str) -> str:
+        self.calls.append((system, user))
+        out = self.outputs.pop(0)
+        if isinstance(out, Exception):
+            raise out
+        return out if isinstance(out, str) else json.dumps(out)
+
+
+def test_retry_succeeds_with_failures_fed_back(fixtures, caplog):
+    bad = fact("BAD CLAIM", quote="z = 3")
+    llm = SeqLLM(doc(summary=[bad]), doc(summary=[fact("Fixed claim.")]))
+    with caplog.at_level(logging.INFO, logger="bricksplain"):
+        r = generate(make_client(fixtures, llm), fixtures)
+    assert len(llm.calls) == 2
+    assert "quote not found" in llm.calls[1][1]
+    assert "Fixed claim." in r.text and "BAD CLAIM" not in r.text
+    assert "dropped" not in r.text.lower()
+    assert any("retry" in m for m in caplog.messages)
+
+
+def test_claims_still_failing_after_retry_are_dropped_and_counted(fixtures):
+    bad = fact("BAD CLAIM", quote="z = 3")
+    out = doc(summary=[fact("Good claim."), bad])
+    llm = SeqLLM(out, out)
+    r = generate(make_client(fixtures, llm), fixtures)
+    assert len(llm.calls) == 2
+    assert "Good claim." in r.text and "BAD CLAIM" not in r.text
+    assert "1 claim dropped" in r.text
+
+
+def test_failed_retry_keeps_first_result(fixtures):
+    from bricksplain.llm import LLMError
+
+    out = doc(summary=[fact("Good claim."), fact("BAD", quote="z = 3")])
+    r = generate(make_client(fixtures, SeqLLM(out, LLMError("boom"))), fixtures)
+    assert "Good claim." in r.text and "1 claim dropped" in r.text
+
+
+def _client_with(responses, sleeps, key="test-key"):
+    import httpx
+
+    from bricksplain.llm import OpenAICompatClient
+
+    queue = list(responses)
+    ok = httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+    return OpenAICompatClient(
+        Config("groq", "m", key),
+        transport=httpx.MockTransport(lambda req: queue.pop(0) if queue else ok),
+        sleep=sleeps.append,
+    )
+
+
+def test_429_honours_retry_after_then_succeeds(caplog):
+    import httpx
+
+    sleeps = []
+    client = _client_with([httpx.Response(429, headers={"retry-after": "7"})], sleeps)
+    with caplog.at_level(logging.INFO, logger="bricksplain"):
+        assert client.complete("sys", "SECRET-PROMPT") == "ok"
+    assert sleeps == [7.0]
+    text = "\n".join(caplog.messages)
+    assert "429" in text and "7.0s" in text
+    assert "SECRET-PROMPT" not in text and "test-key" not in text
+
+
+def test_persistent_429_gives_up_with_clear_error_in_ui(fixtures):
+    import httpx
+
+    from bricksplain.llm import MAX_RATE_LIMIT_RETRIES
+
+    sleeps = []
+    client = _client_with([httpx.Response(429)] * 10, sleeps)
+    r = generate(make_client(fixtures, client), fixtures)
+    assert len(sleeps) == MAX_RATE_LIMIT_RETRIES
+    assert "could not be generated" in r.text and "rate limiting" in r.text
+    assert "Traceback" not in r.text
+
+
+def test_persistent_server_failure_is_logged_and_shown(fixtures, caplog):
+    import httpx
+
+    client = _client_with([httpx.Response(500)], [])
+    with caplog.at_level(logging.ERROR, logger="bricksplain"):
+        r = generate(make_client(fixtures, client), fixtures)
+    assert "HTTP 500" in r.text
+    assert any("500" in m for m in caplog.messages)

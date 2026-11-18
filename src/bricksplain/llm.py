@@ -2,6 +2,7 @@
 
 import logging
 import time
+from collections.abc import Callable
 from typing import Protocol
 
 import httpx
@@ -27,6 +28,20 @@ PROVIDERS = {
 }
 
 
+MAX_RATE_LIMIT_RETRIES = 3
+MAX_RETRY_WAIT = 60.0
+DEFAULT_RETRY_WAIT = 5.0
+
+
+def _retry_wait(resp: httpx.Response) -> float:
+    """Seconds to wait before retrying a 429, honouring Retry-After."""
+    try:
+        wait = float(resp.headers.get("retry-after", ""))
+    except ValueError:
+        wait = DEFAULT_RETRY_WAIT
+    return min(max(wait, 0.0), MAX_RETRY_WAIT)
+
+
 class LLMError(Exception):
     """The LLM call failed. Never contains the API key."""
 
@@ -41,8 +56,10 @@ class OpenAICompatClient:
         config: Config,
         transport: httpx.BaseTransport | None = None,
         timeout: float = 120.0,
+        sleep: Callable[[float], None] = time.sleep,
     ):
         self._config = config
+        self._sleep = sleep
         self._http = httpx.Client(transport=transport, timeout=timeout)
 
     def complete(self, system: str, user: str) -> str:
@@ -62,20 +79,41 @@ class OpenAICompatClient:
         status: int | str = "error"
         usage: dict = {}
         try:
-            resp = self._http.post(
-                provider["url"],
-                json=body,
-                headers={"Authorization": f"Bearer {cfg.api_key}"},
-            )
-            status = resp.status_code
+            retries = 0
+            while True:
+                resp = self._http.post(
+                    provider["url"],
+                    json=body,
+                    headers={"Authorization": f"Bearer {cfg.api_key}"},
+                )
+                status = resp.status_code
+                if status != 429:
+                    break
+                if retries >= MAX_RATE_LIMIT_RETRIES:
+                    log.error("llm rate limited; giving up after %d retries", retries)
+                    raise LLMError(
+                        "The LLM provider is rate limiting requests; try again shortly."
+                    )
+                wait = _retry_wait(resp)
+                retries += 1
+                log.warning(
+                    "llm rate limited (429); retry %d/%d in %.1fs",
+                    retries,
+                    MAX_RATE_LIMIT_RETRIES,
+                    wait,
+                )
+                self._sleep(wait)
             if status != 200:
+                log.error("llm request failed: HTTP %s", status)
                 raise LLMError(f"The LLM provider returned HTTP {status}.")
             data = resp.json()
             usage = data.get("usage") or {}
             return data["choices"][0]["message"]["content"] or ""
         except httpx.HTTPError as e:
+            log.error("llm request failed: %s", type(e).__name__)
             raise LLMError(f"The LLM request failed: {type(e).__name__}.") from e
         except (KeyError, IndexError, ValueError, TypeError) as e:
+            log.error("llm response had an unexpected shape")
             raise LLMError("The LLM response had an unexpected shape.") from e
         finally:
             log.info(

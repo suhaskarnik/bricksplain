@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, StrictInt, ValidationError, model_validator
 
+from .llm import LLMClient, LLMError
 from .notebook import Notebook
 
 log = logging.getLogger("bricksplain")
@@ -62,6 +63,7 @@ class Section:
 class ManagerDoc:
     sections: list[Section]
     dropped: int
+    failures: list[str] = field(default_factory=list)
 
 
 def load_prompt(name: str) -> str:
@@ -108,7 +110,7 @@ def build_doc(raw: str, notebook: Notebook) -> ManagerDoc:
         raise DocError("The LLM did not return valid JSON.") from e
     if not isinstance(data, dict):
         raise DocError("The LLM output was not a JSON object.")
-    sections, dropped = [], 0
+    sections, dropped, failures = [], 0, []
     for key, title in SECTIONS:
         section = Section(key, title)
         entries = data.get(key, [])
@@ -116,16 +118,43 @@ def build_doc(raw: str, notebook: Notebook) -> ManagerDoc:
             try:
                 item = Item.model_validate(entry)
             except ValidationError:
-                log.warning("dropped claim in %s: malformed item", key)
+                log.warning("failing claim in %s: malformed item", key)
+                failures.append(f"{key}: an item was malformed")
                 dropped += 1
                 continue
-            failures = [r for c in item.citations if (r := verify(c, notebook))]
-            if failures:
-                log.warning("dropped claim in %s: %s", key, "; ".join(failures))
+            failed = [r for c in item.citations if (r := verify(c, notebook))]
+            if failed:
+                reason = "; ".join(failed)
+                log.warning("failing claim in %s: %s", key, reason)
+                failures.append(f"{key}: {reason}")
                 dropped += 1
             else:
                 section.items.append(item)
         sections.append(section)
     if dropped:
         log.warning("citation verification dropped %d claim(s)", dropped)
-    return ManagerDoc(sections, dropped)
+    return ManagerDoc(sections, dropped, failures)
+
+
+def generate_manager_doc(llm: LLMClient, notebook: Notebook) -> ManagerDoc:
+    """Generate the doc; retry once with failures fed back if any Claim fails."""
+    system, user = load_prompt("manager"), numbered_listing(notebook)
+    doc = build_doc(llm.complete(system, user), notebook)
+    if not doc.dropped:
+        return doc
+    log.warning("retrying generation once after %d failing claim(s)", doc.dropped)
+    feedback = (
+        f"{user}\n\nYour previous answer had claims whose citations failed "
+        "verification:\n"
+        + "\n".join(f"- {f}" for f in doc.failures)
+        + "\nReturn the complete corrected JSON document. Every citation must "
+        "use lines inside the cited cell and a quote copied verbatim from them."
+    )
+    try:
+        retried = build_doc(llm.complete(system, feedback), notebook)
+    except (LLMError, DocError) as e:
+        log.warning("retry failed (%s); keeping first result", type(e).__name__)
+        return doc
+    if retried.dropped:
+        log.warning("%d claim(s) still failing after retry; dropped", retried.dropped)
+    return retried if retried.dropped <= doc.dropped else doc
