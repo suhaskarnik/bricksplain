@@ -16,7 +16,7 @@ Each item is an object of one of three types.
 
 Every fact and concern needs at least one citation:
 {"cell": <cell number>, "start": <first line>, "end": <last line>, "quote": "<text copied verbatim from those lines>"}
-Cell numbers and line numbers are exactly as shown in the numbered listing. A citation's lines must lie inside the one cell it names. The quote must appear in those lines exactly as written, so copy it rather than paraphrase.
+Cell numbers and line numbers are exactly as shown in the numbered listing. A citation's lines must lie inside the one cell it names. The quote must appear in those lines exactly as written, so copy it rather than paraphrase. Keep each quote short: one distinctive line, or a fragment of a line, never the whole range. Long multi-line quotes are copied wrongly, and a claim with a wrong quote is thrown away. The lines may still span a wider range than the quote.
 
 Rules:
 - Never guess. If behaviour depends on something outside the notebook, such as an included notebook, an external table or a file you cannot see, say that it is unknown, and raise it as a concern citing the line that refers to it.
