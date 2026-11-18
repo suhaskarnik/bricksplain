@@ -6,7 +6,11 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-PROVIDER_KEYS = {"groq": "GROQ_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
+PROVIDER_KEYS = {
+    "groq": "GROQ_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "google": "GOOGLE_API_KEY",
+}
 
 
 class ConfigError(Exception):

@@ -20,6 +20,10 @@ PROVIDERS = {
         "url": "https://openrouter.ai/api/v1/chat/completions",
         "json_mode": True,
     },
+    "google": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "json_mode": True,
+    },
 }
 
 

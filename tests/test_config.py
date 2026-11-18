@@ -91,3 +91,22 @@ def test_env_interpolation_cannot_pull_model_or_key_from_process_environment(dir
     cfg = load_config(cwd, {"PROC_MODEL": "evil", "PROC_KEY": "leaked"})
     assert cfg.model == "${PROC_MODEL}"
     assert cfg.api_key == "${PROC_KEY}"
+
+
+def test_google_provider_resolves_model_and_central_key(dirs):
+    cwd, central = dirs
+    write_env(cwd, BRICKSPLAIN_MODEL="google/gemini-2.5-flash")
+    write_env(central, GOOGLE_API_KEY="g-key")
+    cfg = load_config(cwd, {"LLM_PROVIDERS": str(central)})
+    assert (cfg.provider, cfg.model, cfg.api_key) == (
+        "google",
+        "gemini-2.5-flash",
+        "g-key",
+    )
+
+
+def test_google_missing_key_error_names_google_api_key(dirs):
+    cwd, _ = dirs
+    write_env(cwd, BRICKSPLAIN_MODEL="google/gemini-2.5-flash", GROQ_API_KEY="x")
+    with pytest.raises(ConfigError, match="GOOGLE_API_KEY"):
+        load_config(cwd, {})

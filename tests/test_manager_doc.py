@@ -205,3 +205,27 @@ def test_viewer_form_uses_the_edited_path(fixtures):
     r = make_client(fixtures, FakeLLM(doc())).get("/")
     assert r.text.count('name="path"') == 1
     assert 'formaction="/generate"' in r.text
+
+
+def test_google_provider_posts_to_google_url_with_model_verbatim():
+    import httpx
+
+    from bricksplain.llm import OpenAICompatClient
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content)
+        seen["auth"] = request.headers["authorization"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    client = OpenAICompatClient(
+        Config("google", "gemini-2.5-flash", "g-key"),
+        transport=httpx.MockTransport(handler),
+    )
+    assert client.complete("sys", "usr") == "ok"
+    assert seen["url"].startswith("https://generativelanguage.googleapis.com/")
+    assert seen["body"]["model"] == "gemini-2.5-flash"
+    assert seen["body"]["response_format"] == {"type": "json_object"}
+    assert seen["auth"] == "Bearer g-key"

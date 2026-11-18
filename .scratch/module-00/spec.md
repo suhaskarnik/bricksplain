@@ -93,13 +93,13 @@ The user chooses the LLM through a single model setting in the working directory
 
 ### Model and provider configuration
 54. As a user, I want to choose the model with one setting in the working directory's `.env`, so that each of my apps can use a different model.
-55. As a user, I want the setting to be `<provider>/<model id>` with provider `groq` or `openrouter`, so that the provider is explicit.
+55. As a user, I want the setting to be `<provider>/<model id>` with provider `groq`, `openrouter` or `google`, so that the provider is explicit.
 56. As a user, I want the model id after the first slash passed verbatim to the provider, so that provider-style ids with slashes work.
 57. As a user, I want an unknown provider or a missing slash to fail at startup with a clear message, so that misconfiguration is caught early.
 58. As a user, I want API keys read from my central providers directory (named by `LLM_PROVIDERS`) first and then from the working directory, so that credentials stay centralised.
 59. As a user, I want a missing key in the central file to fall back to the working directory's `.env` for that key, so that partial setups still work.
 60. As a user, I want the model setting honoured only from the working directory's `.env`, so that a shared central file can never force a model on every app.
-61. As a user, I want only the chosen provider's key required, so that I don't need both providers to run.
+61. As a user, I want only the chosen provider's key required, so that I don't need every provider's key to run.
 62. As a user, I want a startup error naming the missing key (never its value), so that I can fix configuration safely.
 
 ### Logging and observability
@@ -174,10 +174,10 @@ The user chooses the LLM through a single model setting in the working directory
 - Each Audience Doc has a Markdown download.
 
 **LLM access and configuration**
-- Two providers, `groq` and `openrouter`, both reached through the OpenAI-compatible chat interface via a small provider table of base URLs. Structured-output mode is used where the provider and model support it, with prompt-plus-validation as the fallback.
+- Three providers, `groq`, `openrouter` and `google`, all reached through the OpenAI-compatible chat interface via a small provider table of base URLs. Structured-output mode is used where the provider and model support it, with prompt-plus-validation as the fallback.
 - The model setting is `BRICKSPLAIN_MODEL` of the form `<provider>/<model id>`, split on the first slash. The remainder is passed verbatim. Unknown provider or missing slash is a startup error.
 - The model is read only from the working directory's `.env`, never from the central providers file or the process environment.
-- API keys (`GROQ_API_KEY`, `OPENROUTER_API_KEY`) are resolved per key: the `.env` under the directory named by `LLM_PROVIDERS` first, then the working directory's `.env`. Only the selected provider's key is required. Errors name the missing key and never print values.
+- API keys (`GROQ_API_KEY`, `OPENROUTER_API_KEY`, `GOOGLE_API_KEY`) are resolved per key: the `.env` under the directory named by `LLM_PROVIDERS` first, then the working directory's `.env`. Only the selected provider's key is required. Errors name the missing key and never print values.
 - The LLM client is the one external dependency replaced by a fake in tests.
 
 **Logging**
@@ -214,7 +214,7 @@ The user chooses the LLM through a single model setting in the working directory
 ## Out of Scope
 
 - Executing the Notebook, or reading or analysing the sample CSV data.
-- Providers beyond `groq` and `openrouter`.
+- Providers beyond `groq`, `openrouter` and `google`.
 - Notebook formats other than the Databricks `.py` export (for example `.ipynb` or DBC archives).
 - Multi-user hosting, authentication, or exposure beyond localhost.
 - Editing or writing back to the Notebook, or auto-fixing the issues found.
