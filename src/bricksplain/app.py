@@ -1,17 +1,24 @@
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from . import notebook as nb
 from .config import Config
+from .llm import LLMClient, LLMError, OpenAICompatClient
+from .manager_doc import DocError, build_doc, load_prompt, numbered_listing
 
 DEFAULT_PATH = "testdata/cash_application_engine.py"
 TEMPLATE_DIR = str(Path(__file__).parent / "templates")
 
 
-def create_app(config: Config, default_path: str = DEFAULT_PATH) -> FastAPI:
+def create_app(
+    config: Config,
+    default_path: str = DEFAULT_PATH,
+    llm_client: LLMClient | None = None,
+) -> FastAPI:
+    llm = llm_client or OpenAICompatClient(config)
     app = FastAPI(title="Bricksplain")
     templates = Jinja2Templates(directory=TEMPLATE_DIR)
     templates.env.globals["llm_label"] = f"{config.provider} / {config.model}"
@@ -21,6 +28,22 @@ def create_app(config: Config, default_path: str = DEFAULT_PATH) -> FastAPI:
         return templates.TemplateResponse(
             request, "index.html", {"path": path or default_path}
         )
+
+    @app.post("/generate", response_class=HTMLResponse)
+    def generate(request: Request, path: str = Form("")):
+        ctx: dict = {"path": path, "doc": None, "error": None}
+        try:
+            notebook = nb.load(path)
+        except nb.NotebookError as e:
+            ctx["error"] = str(e)
+            return templates.TemplateResponse(request, "index.html", ctx)
+        ctx["warnings"] = notebook.warnings
+        try:
+            raw = llm.complete(load_prompt("manager"), numbered_listing(notebook))
+            ctx["doc"] = build_doc(raw, notebook)
+        except (LLMError, DocError) as e:
+            ctx["error"] = f"The Manager doc could not be generated: {e}"
+        return templates.TemplateResponse(request, "index.html", ctx)
 
     @app.get("/source", response_class=HTMLResponse)
     def source(

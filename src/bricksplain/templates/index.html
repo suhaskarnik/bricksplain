@@ -2,12 +2,35 @@
 {% block body %}
 <h1>Bricksplain</h1>
 <form action="/source" method="get">
-  <p><label>Notebook path <input name="path" value="{{ path }}" size="70"></label></p>
+  <p><label>Notebook path <input name="path" value="{{ path }}" size="70"></label>
+  <button type="submit" formaction="/generate" formmethod="post">Generate</button></p>
   <p>
     <label>Cell <input name="cell" size="4"></label>
     <label>Line Range from <input name="start" size="5"></label>
     <label>to <input name="end" size="5"></label>
+    <button type="submit">Open Source Viewer</button>
   </p>
-  <button type="submit">Open Source Viewer</button>
 </form>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% for w in warnings or [] %}<p class="warning">{{ w }}</p>{% endfor %}
+{% if doc %}
+<article class="doc" id="doc-manager">
+<h2>Manager Audience Doc</h2>
+{% if doc.dropped %}<p class="warning">{{ doc.dropped }} claim{{ "s" if doc.dropped != 1 }} dropped: {{ "its" if doc.dropped == 1 else "their" }} citations could not be verified against the Notebook.</p>{% endif %}
+{% for s in doc.sections %}
+<section>
+<h3>{{ s.title }}</h3>
+{% for item in s.items %}
+<p class="item {{ item.type }}">
+  {% if item.type == "context" %}<span class="tag">Context &middot; Not from the Notebook</span>
+  {% elif item.type == "concern" %}<span class="tag sev-{{ item.severity }}">Concern &middot; {{ item.severity }}</span>
+  {% else %}<span class="tag">Fact</span>{% endif %}
+  {{ item.text }}
+  {% for c in item.citations %}<a class="cite" href="/source?path={{ path | urlencode }}&amp;cell={{ c.cell }}&amp;start={{ c.start }}&amp;end={{ c.end }}">[Cell {{ c.cell }}, {{ "line %d" % c.start if c.start == c.end else "lines %d-%d" % (c.start, c.end) }}]</a>{% endfor %}
+</p>
+{% endfor %}
+</section>
+{% endfor %}
+</article>
+{% endif %}
 {% endblock %}
