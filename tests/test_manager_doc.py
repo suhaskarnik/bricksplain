@@ -5,6 +5,8 @@ from urllib.parse import unquote
 
 import pytest
 from fastapi.testclient import TestClient
+from support import generate as _generate
+from support import llm_for
 
 from bricksplain.app import create_app
 from bricksplain.config import Config
@@ -40,13 +42,13 @@ def make_client(fixtures, llm):
     app = create_app(
         Config("groq", "m", "test-key"),
         default_path=str(fixtures / "small.py"),
-        llm_client=llm,
+        llm_client=llm_for("manager", llm),
     )
     return TestClient(app)
 
 
 def generate(client, fixtures):
-    return client.post("/generate", data={"path": str(fixtures / "small.py")})
+    return _generate(client, str(fixtures / "small.py"))
 
 
 def test_valid_doc_has_fixed_skeleton_and_verified_citation_links(fixtures):

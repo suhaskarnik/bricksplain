@@ -1,0 +1,23 @@
+<article class="doc" id="doc-{{ ds.audience.key }}" data-doc-state="{{ ds.state }}">
+<h2>{{ ds.audience.title }} Audience Doc</h2>
+{% if ds.state == "failed" %}<p class="error">{{ ds.error }}</p>
+{% elif ds.state != "done" %}<p class="status">{{ ds.state | capitalize }}&hellip;</p>
+{% else %}
+{% set doc = ds.doc %}
+{% if doc.dropped %}<p class="warning">{{ doc.dropped }} claim{{ "s" if doc.dropped != 1 }} dropped: {{ "its" if doc.dropped == 1 else "their" }} citations could not be verified against the Notebook.</p>{% endif %}
+{% for s in doc.sections %}
+<section>
+<h3>{{ s.title }}</h3>
+{% for item in s.items %}
+<p class="item {{ item.type }}">
+  {% if item.type == "context" %}<span class="tag">Context &middot; Not from the Notebook</span>
+  {% elif item.type == "concern" %}<span class="tag sev-{{ item.severity }}">Concern &middot; {{ item.severity }}</span>
+  {% else %}<span class="tag">Fact</span>{% endif %}
+  {{ item.text }}
+  {% for c in item.citations %}<a class="cite" href="/source?path={{ job.path | urlencode }}&amp;cell={{ c.cell }}&amp;start={{ c.start }}&amp;end={{ c.end }}">[Cell {{ c.cell }}, {{ "line %d" % c.start if c.start == c.end else "lines %d-%d" % (c.start, c.end) }}]</a>{% endfor %}
+</p>
+{% endfor %}
+</section>
+{% endfor %}
+{% endif %}
+</article>

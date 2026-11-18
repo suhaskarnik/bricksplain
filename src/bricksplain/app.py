@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from . import notebook as nb
 from .config import Config
-from .llm import LLMClient, LLMError, OpenAICompatClient
-from .manager_doc import DocError, generate_manager_doc
+from .jobs import JobRunner
+from .llm import LLMClient, OpenAICompatClient
 
 DEFAULT_PATH = "testdata/cash_application_engine.py"
 TEMPLATE_DIR = str(Path(__file__).parent / "templates")
@@ -18,7 +18,7 @@ def create_app(
     default_path: str = DEFAULT_PATH,
     llm_client: LLMClient | None = None,
 ) -> FastAPI:
-    llm = llm_client or OpenAICompatClient(config)
+    runner = JobRunner(llm_client or OpenAICompatClient(config))
     app = FastAPI(title="Bricksplain")
     templates = Jinja2Templates(directory=TEMPLATE_DIR)
     templates.env.globals["llm_label"] = f"{config.provider} / {config.model}"
@@ -31,18 +31,24 @@ def create_app(
 
     @app.post("/generate", response_class=HTMLResponse)
     def generate(request: Request, path: str = Form("")):
-        ctx: dict = {"path": path, "doc": None, "error": None}
+        ctx: dict = {"path": path, "job": None, "error": None}
         try:
             notebook = nb.load(path)
         except nb.NotebookError as e:
             ctx["error"] = str(e)
             return templates.TemplateResponse(request, "index.html", ctx)
         ctx["warnings"] = notebook.warnings
-        try:
-            ctx["doc"] = generate_manager_doc(llm, notebook)
-        except (LLMError, DocError) as e:
-            ctx["error"] = f"The Manager doc could not be generated: {e}"
+        ctx["job"] = runner.start(path, notebook)
         return templates.TemplateResponse(request, "index.html", ctx)
+
+    @app.get("/jobs/{job_id}/{audience}", response_class=HTMLResponse)
+    def job_doc(request: Request, job_id: str, audience: str):
+        job = runner.get(job_id)
+        if job is None or audience not in job.docs:
+            raise HTTPException(404, "Unknown job or audience.")
+        return templates.TemplateResponse(
+            request, "_doc.html", {"job": job, "ds": job.docs[audience]}
+        )
 
     @app.get("/source", response_class=HTMLResponse)
     def source(

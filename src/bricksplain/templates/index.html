@@ -13,24 +13,45 @@
 </form>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 {% for w in warnings or [] %}<p class="warning">{{ w }}</p>{% endfor %}
-{% if doc %}
-<article class="doc" id="doc-manager">
-<h2>Manager Audience Doc</h2>
-{% if doc.dropped %}<p class="warning">{{ doc.dropped }} claim{{ "s" if doc.dropped != 1 }} dropped: {{ "its" if doc.dropped == 1 else "their" }} citations could not be verified against the Notebook.</p>{% endif %}
-{% for s in doc.sections %}
-<section>
-<h3>{{ s.title }}</h3>
-{% for item in s.items %}
-<p class="item {{ item.type }}">
-  {% if item.type == "context" %}<span class="tag">Context &middot; Not from the Notebook</span>
-  {% elif item.type == "concern" %}<span class="tag sev-{{ item.severity }}">Concern &middot; {{ item.severity }}</span>
-  {% else %}<span class="tag">Fact</span>{% endif %}
-  {{ item.text }}
-  {% for c in item.citations %}<a class="cite" href="/source?path={{ path | urlencode }}&amp;cell={{ c.cell }}&amp;start={{ c.start }}&amp;end={{ c.end }}">[Cell {{ c.cell }}, {{ "line %d" % c.start if c.start == c.end else "lines %d-%d" % (c.start, c.end) }}]</a>{% endfor %}
-</p>
+{% if job %}
+<div class="tabs" role="tablist">
+{% for key, ds in job.docs.items() %}<button type="button" role="tab" class="tab" data-tab="{{ key }}">{{ ds.audience.title }} <span class="state" id="state-{{ key }}">{{ ds.state }}</span></button>
 {% endfor %}
-</section>
+</div>
+{% for key, ds in job.docs.items() %}
+<div class="panel" id="panel-{{ key }}" data-job="{{ job.id }}" data-audience="{{ key }}" data-state="{{ ds.state }}">
+{% include "_doc.html" %}
+</div>
 {% endfor %}
-</article>
+<script>
+(function () {
+  var panels = document.querySelectorAll(".panel");
+  function show(key) {
+    panels.forEach(function (p) { p.hidden = p.dataset.audience !== key; });
+    document.querySelectorAll(".tab").forEach(function (t) {
+      t.classList.toggle("active", t.dataset.tab === key);
+    });
+  }
+  document.querySelectorAll(".tab").forEach(function (t) {
+    t.addEventListener("click", function () { show(t.dataset.tab); });
+  });
+  show(panels[0].dataset.audience);
+  function poll(p) {
+    var done = p.dataset.state === "done" || p.dataset.state === "failed";
+    if (done) return;
+    fetch("/jobs/" + p.dataset.job + "/" + p.dataset.audience)
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        p.innerHTML = html;
+        var s = p.querySelector("[data-doc-state]").dataset.docState;
+        p.dataset.state = s;
+        document.getElementById("state-" + p.dataset.audience).textContent = s;
+        setTimeout(function () { poll(p); }, 1000);
+      })
+      .catch(function () { setTimeout(function () { poll(p); }, 3000); });
+  }
+  panels.forEach(function (p) { setTimeout(function () { poll(p); }, 500); });
+})();
+</script>
 {% endif %}
 {% endblock %}

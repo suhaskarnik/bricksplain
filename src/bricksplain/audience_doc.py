@@ -1,4 +1,4 @@
-"""Manager Audience Doc: schema, verification of Citations, and prompt loading."""
+"""Audience Docs: schema, verification of Citations, and prompt loading."""
 
 import json
 import logging
@@ -13,12 +13,52 @@ from .notebook import Notebook
 
 log = logging.getLogger("bricksplain")
 
-SECTIONS = (
-    ("summary", "Summary"),
-    ("how_it_works", "How it works in business terms"),
-    ("outcomes", "Outcomes and impact"),
-    ("potential_issues", "Potential issues"),
+
+@dataclass(frozen=True)
+class Audience:
+    key: str
+    title: str
+    prompt: str
+    sections: tuple[tuple[str, str], ...]
+
+
+AUDIENCES = (
+    Audience(
+        "manager",
+        "Manager",
+        "manager",
+        (
+            ("summary", "Summary"),
+            ("how_it_works", "How it works in business terms"),
+            ("outcomes", "Outcomes and impact"),
+            ("potential_issues", "Potential issues"),
+        ),
+    ),
+    Audience(
+        "developer",
+        "Developer",
+        "developer",
+        (
+            ("notebook_map", "Notebook map by Cell"),
+            ("data_flow", "Data flow"),
+            ("business_rules", "Business rules"),
+            ("inferred_glossary", "Inferred Glossary"),
+            ("gotchas", "Gotchas and how to run"),
+        ),
+    ),
+    Audience(
+        "agent",
+        "AI coding agent",
+        "agent",
+        (
+            ("purpose", "Purpose"),
+            ("invariants", "Invariants"),
+            ("risky_areas", "Risky areas"),
+            ("verify", "How to verify changes"),
+        ),
+    ),
 )
+AUDIENCE_BY_KEY = {a.key: a for a in AUDIENCES}
 
 
 class DocError(Exception):
@@ -60,7 +100,7 @@ class Section:
 
 
 @dataclass
-class ManagerDoc:
+class AudienceDoc:
     sections: list[Section]
     dropped: int
     failures: list[str] = field(default_factory=list)
@@ -103,7 +143,7 @@ def verify(citation: Citation, notebook: Notebook) -> str | None:
     return None
 
 
-def build_doc(raw: str, notebook: Notebook) -> ManagerDoc:
+def build_doc(raw: str, notebook: Notebook, audience: Audience) -> AudienceDoc:
     try:
         data = json.loads(raw)
     except ValueError as e:
@@ -111,38 +151,44 @@ def build_doc(raw: str, notebook: Notebook) -> ManagerDoc:
     if not isinstance(data, dict):
         raise DocError("The LLM output was not a JSON object.")
     sections, dropped, failures = [], 0, []
-    for key, title in SECTIONS:
+    for key, title in audience.sections:
         section = Section(key, title)
         entries = data.get(key, [])
         for entry in entries if isinstance(entries, list) else []:
             try:
                 item = Item.model_validate(entry)
             except ValidationError:
-                log.warning("failing claim in %s: malformed item", key)
+                log.warning("failing claim in %s/%s: malformed item", audience.key, key)
                 failures.append(f"{key}: an item was malformed")
                 dropped += 1
                 continue
             failed = [r for c in item.citations if (r := verify(c, notebook))]
             if failed:
                 reason = "; ".join(failed)
-                log.warning("failing claim in %s: %s", key, reason)
+                log.warning("failing claim in %s/%s: %s", audience.key, key, reason)
                 failures.append(f"{key}: {reason}")
                 dropped += 1
             else:
                 section.items.append(item)
         sections.append(section)
     if dropped:
-        log.warning("citation verification dropped %d claim(s)", dropped)
-    return ManagerDoc(sections, dropped, failures)
+        log.warning(
+            "%s: citation verification dropped %d claim(s)", audience.key, dropped
+        )
+    return AudienceDoc(sections, dropped, failures)
 
 
-def generate_manager_doc(llm: LLMClient, notebook: Notebook) -> ManagerDoc:
+def generate_doc(llm: LLMClient, notebook: Notebook, audience: Audience) -> AudienceDoc:
     """Generate the doc; retry once with failures fed back if any Claim fails."""
-    system, user = load_prompt("manager"), numbered_listing(notebook)
-    doc = build_doc(llm.complete(system, user), notebook)
+    system, user = load_prompt(audience.prompt), numbered_listing(notebook)
+    doc = build_doc(llm.complete(system, user), notebook, audience)
     if not doc.dropped:
         return doc
-    log.warning("retrying generation once after %d failing claim(s)", doc.dropped)
+    log.warning(
+        "%s: retrying generation once after %d failing claim(s)",
+        audience.key,
+        doc.dropped,
+    )
     feedback = (
         f"{user}\n\nYour previous answer had claims whose citations failed "
         "verification:\n"
@@ -151,10 +197,18 @@ def generate_manager_doc(llm: LLMClient, notebook: Notebook) -> ManagerDoc:
         "use lines inside the cited cell and a quote copied verbatim from them."
     )
     try:
-        retried = build_doc(llm.complete(system, feedback), notebook)
+        retried = build_doc(llm.complete(system, feedback), notebook, audience)
     except (LLMError, DocError) as e:
-        log.warning("retry failed (%s); keeping first result", type(e).__name__)
+        log.warning(
+            "%s: retry failed (%s); keeping first result",
+            audience.key,
+            type(e).__name__,
+        )
         return doc
     if retried.dropped:
-        log.warning("%d claim(s) still failing after retry; dropped", retried.dropped)
+        log.warning(
+            "%s: %d claim(s) still failing after retry; dropped",
+            audience.key,
+            retried.dropped,
+        )
     return retried if retried.dropped <= doc.dropped else doc

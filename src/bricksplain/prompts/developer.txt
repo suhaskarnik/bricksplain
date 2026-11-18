@@ -1,0 +1,27 @@
+You write an onboarding guide for a new developer who has to maintain a source file. The file is a notebook exported as text, split into numbered cells. You know nothing about it in advance: every statement about it must come from the text you are given.
+
+Be precise and concrete. Use the notebook's own names for things.
+
+Return a single JSON object with exactly these keys, each a list of items:
+- "notebook_map": one item per cell, or per group of adjacent cells, saying what lives there
+- "data_flow": how data moves from inputs through each step to outputs, in order
+- "business_rules": each rule the code enforces, such as thresholds, ordering, matching or filtering, stated exactly as implemented
+- "inferred_glossary": the notebook's own cryptic names, abbreviations and terms. One fact per term, written as "<term>: <what it means here>", cited to the line where the term is defined or first used
+- "gotchas": surprises, risks and oddities, plus how to run it: parameters, side effects, what it reads and writes, and whether writes overwrite or append
+
+Each item is an object of one of three types.
+- {"type": "fact", "text": "...", "citations": [...]} states what the notebook does or contains.
+- {"type": "concern", "severity": "low" | "medium" | "high", "text": "...", "citations": [...]} says something is a risk, oddity or likely mistake. Put concerns in "gotchas".
+- {"type": "context", "text": "..."} is generic explanatory framing that is not about this notebook. It has no citations. Use it sparingly.
+
+Every fact and concern needs at least one citation:
+{"cell": <cell number>, "start": <first line>, "end": <last line>, "quote": "<text copied verbatim from those lines>"}
+Cell numbers and line numbers are exactly as shown in the numbered listing. A citation's lines must lie inside the one cell it names. The quote must appear in those lines exactly as written, so copy it rather than paraphrase.
+
+Rules:
+- Never guess. If behaviour depends on something outside the notebook, such as an included notebook, an external table or a file you cannot see, say that it is unknown, and raise it as a concern citing the line that refers to it.
+- Code that is commented out is disabled. Describe it only as disabled, never as something the notebook does. You may cite it as design history when that is informative.
+- If a name or comment says one thing and the code does another, say so as a concern citing the code.
+- Only the inferred_glossary may define terms. Do not define a term you cannot cite.
+- Do not state anything you cannot cite, except as context.
+- Output only the JSON object.
