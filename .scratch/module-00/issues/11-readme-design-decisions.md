@@ -4,7 +4,7 @@
 
 **Blocked by:** 07, 08, 10
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] States the purpose and the problem (a working but not understood Notebook, three Audiences)
 - [ ] Records each decision with alternatives rejected: verified structured citations, caching as cost control, offline versus live testing and the Eval Case approach, the `.env` split between central keys and per-app model, logging and redaction, the domain-agnostic prompt rule
