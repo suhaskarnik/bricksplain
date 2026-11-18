@@ -22,6 +22,7 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [dependency-groups]
 dev = [

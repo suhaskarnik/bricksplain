@@ -4,7 +4,7 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `just eval` runs Eval Cases against the real configured provider and is excluded from `just test`
 - [ ] Eval Cases are stored as code data: a name, the fixture Notebook, the Audience, what must be surfaced, the expected cited Cell and Line Range, and why it matters
