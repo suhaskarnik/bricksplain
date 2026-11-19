@@ -216,9 +216,7 @@ def build_doc(raw: str, notebook: Notebook, audience: Audience) -> AudienceDoc:
                 section.items.append(item)
         sections.append(section)
     if dropped:
-        log.warning(
-            "%s: citation verification dropped %d claim(s)", audience.key, dropped
-        )
+        log.warning("%s: citation checks dropped %d claim(s)", audience.key, dropped)
     return AudienceDoc(sections, dropped, failures)
 
 
@@ -250,12 +248,12 @@ def support_check(llm: LLMClient, doc: AudienceDoc, audience: Audience) -> Audie
     }
     raw = llm.complete(load_prompt(SUPPORT_PROMPT), json.dumps(payload))
     try:
-        verdicts = {v["id"]: v for v in json.loads(raw)["verdicts"]}
+        verdicts = {str(v["id"]): v for v in json.loads(raw)["verdicts"]}
     except (ValueError, KeyError, TypeError) as e:
         raise DocError("The support check did not return usable verdicts.") from e
     unsupported: dict[tuple[str, int], str] = {}
     for n, (s, i) in enumerate(claims):
-        v = verdicts.get(n)
+        v = verdicts.get(str(n))
         if isinstance(v, dict) and v.get("supported") is True:
             continue
         reason = (v.get("reason") if isinstance(v, dict) else None) or "no verdict"
@@ -304,7 +302,10 @@ def generate_doc(llm: LLMClient, notebook: Notebook, audience: Audience) -> Audi
         audience.key,
         doc.dropped,
     )
-    coverage = any("described as a whole" in f for f in doc.failures)
+    coverage = any(
+        "described as a whole" in f and "not supported by its quote" not in f
+        for f in doc.failures
+    )
     feedback = (
         f"{user}\n\nYour previous answer had claims that failed checks:\n"
         + "\n".join(f"- {f}" for f in doc.failures)

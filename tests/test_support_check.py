@@ -144,3 +144,16 @@ def test_claim_missing_from_verdicts_is_treated_as_unsupported(fixtures):
     r = generate(make_client(llm, path), path)
     assert "Manager claim." not in r.docs["manager"]
     assert "1 claim dropped" in r.docs["manager"]
+
+
+def test_verdict_ids_returned_as_strings_still_match(fixtures):
+    path = str(fixtures / "small.py")
+    llm = by_audience(
+        answers({"summary": [fact("Manager claim.")]}),
+        support=lambda u: json.dumps(
+            {"verdicts": [{"id": "0", "supported": True, "reason": "ok"}]}
+        ),
+    )
+    r = generate(make_client(llm, path), path)
+    assert "Manager claim." in r.docs["manager"]
+    assert "dropped" not in r.docs["manager"].lower()
