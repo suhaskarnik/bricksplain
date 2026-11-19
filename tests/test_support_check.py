@@ -90,7 +90,7 @@ def test_support_reasons_logged_only_when_response_logging_is_on(fixtures, caplo
     )
 
 
-def test_doc_with_support_drops_is_not_cached(fixtures):
+def test_doc_with_support_drops_is_cached_to_avoid_repeat_cost(fixtures):
     path = str(fixtures / "small.py")
     out = {"summary": [fact("Check HALTS the run.")]}
     llm = by_audience(answers(out), unsupported={"HALTS": "no"})
@@ -98,7 +98,7 @@ def test_doc_with_support_drops_is_not_cached(fixtures):
     generate(client, path)
     seen = len(llm.seen)
     generate(client, path)
-    assert llm.seen[seen:].count("manager") >= 1
+    assert llm.seen[seen:].count("manager") == 0
 
 
 def test_support_call_failure_is_isolated_to_its_audience_doc(fixtures):

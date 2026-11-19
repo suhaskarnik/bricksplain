@@ -95,15 +95,16 @@ def test_cache_hits_and_misses_logged_at_info(fixtures, caplog):
         assert "cache hit: manager" in caplog.text
 
 
-def test_doc_with_dropped_claims_is_not_cached(fixtures):
+def test_doc_with_dropped_claims_is_cached_to_avoid_repeat_cost(fixtures):
     path = str(fixtures / "small.py")
     bad = {"summary": [fact("x is one.", quote="not in the notebook")]}
     llm = by_audience({"manager": bad, "developer": {}, "agent": {}})
     client = make_client(llm, path)
     generate(client, path)
     seen = len(llm.seen)
-    generate(client, path)
-    assert llm.seen[seen:].count("manager") >= 1
+    r = generate(client, path)
+    assert llm.seen[seen:].count("manager") == 0
+    assert "dropped" in r.docs["manager"].lower()
 
 
 def test_failing_claim_content_is_logged_for_diagnosis(fixtures, caplog):

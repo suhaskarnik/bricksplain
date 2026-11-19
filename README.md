@@ -40,7 +40,7 @@ This is the central bet: it turns "trust the LLM" into "check the evidence in on
 
 ### 2. Caching is cost control
 
-Each Audience Doc costs one LLM call, and the free tiers are rate-limited. Docs are cached on disk, keyed by Notebook content, model string, prompt text and section skeleton, so editing a prompt invalidates old results. Regenerate bypasses the cache. A doc with dropped Claims is not cached, so a flaky generation is not frozen in.
+Each Audience Doc costs one LLM call, and the free tiers are rate-limited. Docs are cached on disk, keyed by Notebook content, model string, prompt text and section skeleton, so editing a prompt invalidates old results. Regenerate bypasses the cache. A doc with dropped Claims is cached too: **a deliberate compromise** for a personal project, because every retry spends quota. The dropped count stays visible on the doc, and Regenerate is the way to try again; a production implementation would leave such docs uncached so a flaky generation is not frozen in.
 
 Rejected: *no cache* (burns quota on every click); *keying on file path or mtime* (stale after edits, misses after renames); *a database* (a directory of JSON files is enough for one user).
 
@@ -92,7 +92,7 @@ Citations must also be fine enough to check. The schema stays `(cell, start, end
 
 Rejected: *a purpose-built decision model for the check* (extra infrastructure for a first version; the LLM pass is the chosen approach); *Coverage as a pass/fail threshold* (rewards padding with irrelevant citations).
 
-The trade-off is a second source of error: the checker can wrongly reject a good Claim. Dropped counts are shown, and docs with drops are never cached.
+The trade-off is a second source of error: the checker can wrongly reject a good Claim. Dropped counts are shown. Docs with drops are cached anyway (see decision 2), so an unlucky generation stays until you press Regenerate.
 
 ## Layout
 

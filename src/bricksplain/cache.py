@@ -66,9 +66,6 @@ class DocCache:
         return doc
 
     def put(self, notebook: Notebook, audience: Audience, doc: AudienceDoc) -> None:
-        if doc.dropped:
-            log.info("not caching %s: %d claim(s) dropped", audience.key, doc.dropped)
-            return
         data = {
             "sections": [
                 {
