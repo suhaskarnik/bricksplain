@@ -50,6 +50,14 @@ _Avoid_: Reference, footnote, source link
 A Citation whose Line Range exists in the cited Cell and contains the text the Claim quoted.
 _Avoid_: Valid citation, checked link
 
+**Supported Citation**:
+A Verified Citation whose quoted text actually backs the Claim that cites it, not merely appears in the Notebook.
+_Avoid_: Correct citation, valid claim
+
+**Coverage**:
+The share of a Notebook's Cells and lines that at least one Claim in an Audience Doc cites. It shows what a doc leaves out.
+_Avoid_: Completeness, score
+
 **Source Viewer**:
 The page that shows the Notebook with Cell boundaries and highlights a cited Line Range.
 _Avoid_: Code view, preview

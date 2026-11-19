@@ -239,8 +239,13 @@ def generate_doc(llm: LLMClient, notebook: Notebook, audience: Audience) -> Audi
         "verification:\n"
         + "\n".join(f"- {f}" for f in doc.failures)
         + "\nReturn the complete corrected JSON document. Every citation must "
-        "use lines inside the cited cell and a quote copied verbatim from them. A claim "
-        'marked "describes_cell" must cite the cell\'s full line range.'
+        "use lines inside the cited cell and a quote copied verbatim from them."
+        + (
+            ' A claim with "describes_cell": true must cite each cited cell\'s '
+            "full line range."
+            if coverage
+            else ""
+        )
     )
     try:
         retried = build_doc(llm.complete(system, feedback), notebook, audience)
