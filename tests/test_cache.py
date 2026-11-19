@@ -131,3 +131,20 @@ def test_quote_without_magic_prefix_verifies_against_markdown_cell(fixtures):
     r = generate(make_client(llm, path), path)
     assert "The notebook has a title and notes." in r.docs["manager"]
     assert llm.seen.count("manager") == 1  # no retry: nothing failed
+
+
+def test_changed_support_prompt_invalidates_every_audience(fixtures, monkeypatch):
+    import bricksplain.cache as cache_mod
+
+    path = str(fixtures / "small.py")
+    llm = by_audience(ANSWERS)
+    client = make_client(llm, path)
+    generate(client, path)
+    real = cache_mod.load_prompt
+    monkeypatch.setattr(
+        cache_mod,
+        "load_prompt",
+        lambda n: real(n) + " edited" if n == "support" else real(n),
+    )
+    generate(client, path)
+    assert sorted(llm.seen[3:]) == ["agent", "developer", "manager"]

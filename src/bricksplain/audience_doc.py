@@ -222,10 +222,81 @@ def build_doc(raw: str, notebook: Notebook, audience: Audience) -> AudienceDoc:
     return AudienceDoc(sections, dropped, failures)
 
 
+SUPPORT_PROMPT = "support"
+
+
+def support_check(llm: LLMClient, doc: AudienceDoc, audience: Audience) -> AudienceDoc:
+    """Drop Claims whose quotes do not back them, using one batched LLM call.
+
+    Raises LLMError/DocError when the call or its answer is unusable: the doc
+    cannot be trusted without the check."""
+    claims = [
+        (s, i)
+        for s in doc.sections
+        for i, item in enumerate(s.items)
+        if item.type != "context"
+    ]
+    if not claims:
+        return doc
+    payload = {
+        "claims": [
+            {
+                "id": n,
+                "text": s.items[i].text,
+                "quotes": [c.quote for c in s.items[i].citations],
+            }
+            for n, (s, i) in enumerate(claims)
+        ]
+    }
+    raw = llm.complete(load_prompt(SUPPORT_PROMPT), json.dumps(payload))
+    try:
+        verdicts = {v["id"]: v for v in json.loads(raw)["verdicts"]}
+    except (ValueError, KeyError, TypeError) as e:
+        raise DocError("The support check did not return usable verdicts.") from e
+    unsupported: dict[tuple[str, int], str] = {}
+    for n, (s, i) in enumerate(claims):
+        v = verdicts.get(n)
+        if isinstance(v, dict) and v.get("supported") is True:
+            continue
+        reason = (v.get("reason") if isinstance(v, dict) else None) or "no verdict"
+        unsupported[(s.key, i)] = str(reason)
+    if not unsupported:
+        return doc
+    sections, failures = [], list(doc.failures)
+    for s in doc.sections:
+        kept = []
+        for i, item in enumerate(s.items):
+            reason = unsupported.get((s.key, i))
+            if reason is None:
+                kept.append(item)
+                continue
+            log.warning("unsupported claim in %s/%s", audience.key, s.key)
+            # The reason and claim text are LLM output: only logged on opt-in.
+            log.warning(
+                "unsupported claim content in %s/%s: text=%r reason=%r",
+                audience.key,
+                s.key,
+                item.text,
+                reason,
+                extra={"llm_response": True},
+            )
+            failures.append(f"{s.key}: not supported by its quote: {reason}")
+        sections.append(Section(s.key, s.title, kept))
+    log.warning("%s: support check dropped %d claim(s)", audience.key, len(unsupported))
+    return AudienceDoc(sections, doc.dropped + len(unsupported), failures)
+
+
+def _generate_checked(
+    llm: LLMClient, system: str, user: str, notebook: Notebook, audience: Audience
+) -> AudienceDoc:
+    doc = build_doc(llm.complete(system, user), notebook, audience)
+    return support_check(llm, doc, audience)
+
+
 def generate_doc(llm: LLMClient, notebook: Notebook, audience: Audience) -> AudienceDoc:
     """Generate the doc; retry once with failures fed back if any Claim fails."""
     system, user = load_prompt(audience.prompt), numbered_listing(notebook)
-    doc = build_doc(llm.complete(system, user), notebook, audience)
+    doc = _generate_checked(llm, system, user, notebook, audience)
     if not doc.dropped:
         return doc
     log.warning(
@@ -235,11 +306,11 @@ def generate_doc(llm: LLMClient, notebook: Notebook, audience: Audience) -> Audi
     )
     coverage = any("described as a whole" in f for f in doc.failures)
     feedback = (
-        f"{user}\n\nYour previous answer had claims whose citations failed "
-        "verification:\n"
+        f"{user}\n\nYour previous answer had claims that failed checks:\n"
         + "\n".join(f"- {f}" for f in doc.failures)
         + "\nReturn the complete corrected JSON document. Every citation must "
-        "use lines inside the cited cell and a quote copied verbatim from them."
+        "use lines inside the cited cell and a quote copied verbatim from them, "
+        "and every claim must follow from its quoted text."
         + (
             ' A claim with "describes_cell": true must cite each cited cell\'s '
             "full line range."
@@ -248,7 +319,7 @@ def generate_doc(llm: LLMClient, notebook: Notebook, audience: Audience) -> Audi
         )
     )
     try:
-        retried = build_doc(llm.complete(system, feedback), notebook, audience)
+        retried = _generate_checked(llm, system, feedback, notebook, audience)
     except (LLMError, DocError) as e:
         log.warning(
             "%s: retry failed (%s); keeping first result",

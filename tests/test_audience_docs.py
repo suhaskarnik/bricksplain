@@ -1,7 +1,15 @@
 import json
 import threading
 
-from support import generate, make_client, panel, panel_ids, wait_done
+from support import (
+    SUPPORT_SYSTEM,
+    generate,
+    make_client,
+    panel,
+    panel_ids,
+    support_answer,
+    wait_done,
+)
 
 from bricksplain.audience_doc import AUDIENCES, load_prompt
 from bricksplain.llm import LLMError
@@ -20,16 +28,27 @@ def fact(text, quote="x = 1"):
     }
 
 
-def by_audience(mapping):
-    """An LLM that answers by which Audience's system prompt it is given."""
+def by_audience(mapping, unsupported=None, support=None):
+    """An LLM that answers by which Audience's system prompt it is given.
+
+    Support-check calls are recorded in `support_calls`, not `seen`. They are
+    answered by `support(user)` if given, else all-supported except claims whose
+    text contains a key of `unsupported`."""
     prompts = {load_prompt(a.prompt): a.key for a in AUDIENCES}
 
     class LLM:
         def __init__(self):
             self.lock = threading.Lock()
             self.seen = []
+            self.support_calls = []
 
         def complete(self, system, user):
+            if system == SUPPORT_SYSTEM:
+                with self.lock:
+                    self.support_calls.append(user)
+                if support:
+                    return support(user)
+                return support_answer(user, unsupported)
             key = prompts[system]
             with self.lock:
                 self.seen.append(key)

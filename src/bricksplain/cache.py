@@ -5,7 +5,14 @@ import json
 import logging
 from pathlib import Path
 
-from .audience_doc import Audience, AudienceDoc, Item, Section, load_prompt
+from .audience_doc import (
+    SUPPORT_PROMPT,
+    Audience,
+    AudienceDoc,
+    Item,
+    Section,
+    load_prompt,
+)
 from .notebook import Notebook
 
 log = logging.getLogger("bricksplain")
@@ -29,6 +36,7 @@ class DocCache:
             "\n".join(notebook.lines),
             self._model,
             load_prompt(audience.prompt),
+            load_prompt(SUPPORT_PROMPT),
             audience.key,
             repr(audience.sections),
         )
