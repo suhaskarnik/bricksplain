@@ -197,3 +197,71 @@ def test_every_audience_has_its_own_domain_free_prompt():
     for p in prompts:
         for word in ("cash", "invoice", "payment", "customer", "bank"):
             assert word not in p.lower()
+
+
+def test_every_prompt_carries_the_same_generic_checklist():
+    checklist = load_prompt("checklist")
+    for phrase in (
+        "disagree with",
+        "never used",
+        "reassigned",
+        "overwrite",
+        "do not stop",
+        "outside the notebook",
+    ):
+        assert phrase in checklist.lower()
+    for a in AUDIENCES:
+        assert checklist.strip() in load_prompt(a.prompt)
+
+
+def test_each_prompt_says_how_to_express_findings_for_its_audience():
+    by_key = {a.key: load_prompt(a.prompt).lower() for a in AUDIENCES}
+    assert "business consequence" in by_key["manager"]
+    assert "code reality" in by_key["developer"]
+    for word in ("invariant", "risky", "runnable check"):
+        assert word in by_key["agent"]
+
+
+CONCERN = {
+    "type": "concern",
+    "severity": "high",
+    "text": "Check only prints.",
+    "citations": [{"cell": 2, "start": 8, "end": 8, "quote": "x = 1"}],
+}
+NONE = {"type": "no_findings", "text": "The checklist found nothing."}
+
+
+def test_findings_render_as_concerns_with_citations(fixtures):
+    path = str(fixtures / "small.py")
+    llm = by_audience(
+        {"manager": {"potential_issues": [CONCERN]}, "developer": {}, "agent": {}}
+    )
+    html = generate(make_client(llm, path), path).docs["manager"]
+    assert "Check only prints." in html
+    assert "Concern" in html
+    assert "cell=2&amp;start=8&amp;end=8" in html
+
+
+def test_no_findings_statement_is_accepted_and_shown_without_citation(fixtures):
+    path = str(fixtures / "small.py")
+    llm = by_audience(
+        {"manager": {"potential_issues": [NONE]}, "developer": {}, "agent": {}}
+    )
+    html = generate(make_client(llm, path), path).docs["manager"]
+    assert "The checklist found nothing." in html
+    assert "No findings" in html
+    assert "dropped" not in html.lower()
+    assert llm.support_calls == []  # nothing to support-check
+    assert llm.seen.count("manager") == 1
+
+
+def test_no_findings_is_in_the_markdown_download(fixtures):
+    path = str(fixtures / "small.py")
+    llm = by_audience(
+        {"manager": {"potential_issues": [NONE]}, "developer": {}, "agent": {}}
+    )
+    client = make_client(llm, path)
+    r = generate(client, path)
+    job = panel_ids(r.page)[0][0]
+    md = client.get(f"/jobs/{job}/manager/download.md").text
+    assert "No findings" in md and "The checklist found nothing." in md

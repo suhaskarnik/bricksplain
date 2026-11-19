@@ -74,7 +74,7 @@ class Citation(BaseModel):
 
 
 class Item(BaseModel):
-    type: Literal["fact", "concern", "context"]
+    type: Literal["fact", "concern", "context", "no_findings"]
     text: str
     severity: Literal["low", "medium", "high"] | None = None
     # True when the Claim describes a whole Cell, so it must cite the Cell's full range.
@@ -83,7 +83,7 @@ class Item(BaseModel):
 
     @model_validator(mode="after")
     def _shape(self):
-        if self.type == "context":
+        if self.type in ("context", "no_findings"):
             self.citations = []
             self.severity = None
             self.describes_cell = False
@@ -110,10 +110,21 @@ class AudienceDoc:
     failures: list[str] = field(default_factory=list)
 
 
-def load_prompt(name: str) -> str:
+def _read_prompt(name: str) -> str:
     return (resources.files("bricksplain") / "prompts" / f"{name}.txt").read_text(
         encoding="utf-8"
     )
+
+
+CHECKLIST_PROMPT = "checklist"
+
+
+def load_prompt(name: str) -> str:
+    """Read a prompt file, inlining the shared risk checklist at `{{checklist}}`."""
+    text = _read_prompt(name)
+    if "{{checklist}}" in text:
+        text = text.replace("{{checklist}}", _read_prompt(CHECKLIST_PROMPT).strip())
+    return text
 
 
 def numbered_listing(notebook: Notebook) -> str:
@@ -232,7 +243,7 @@ def support_check(llm: LLMClient, doc: AudienceDoc, audience: Audience) -> Audie
         (s, i)
         for s in doc.sections
         for i, item in enumerate(s.items)
-        if item.type != "context"
+        if item.type in ("fact", "concern")
     ]
     if not claims:
         return doc
@@ -350,6 +361,8 @@ def to_markdown(doc: AudienceDoc, audience: Audience, path: str) -> str:
         for item in s.items:
             if item.type == "context":
                 label = "Context (not from the Notebook)"
+            elif item.type == "no_findings":
+                label = "No findings"
             elif item.type == "concern":
                 label = f"Concern ({item.severity})"
             else:

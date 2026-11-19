@@ -1,0 +1,8 @@
+Risk checklist. Work through every item below against the notebook and report each finding you can support with a citation:
+- names (of variables, tables, cells, comments) that disagree with the behaviour of the code they label
+- constants or parameters that are defined but never used
+- constants or parameters that are reassigned after their first use
+- writes that overwrite or destroy existing data
+- checks that print or log a result but do not stop the run when they fail
+- behaviour defined outside the notebook, such as included notebooks, external tables or files you cannot see
+If the checklist yields supported findings, report them all; do not drop one because the list is long. If it yields none, do not invent any: instead add exactly one item {"type": "no_findings", "text": "..."} to the section that holds concerns, saying no checklist item applies. A no_findings item has no citations.

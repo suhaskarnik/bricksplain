@@ -42,6 +42,10 @@ _Avoid_: Issue, bug, warning
 Generic explanatory framing that is not about this Notebook. It carries no Citation and is visibly marked as not coming from the Notebook.
 _Avoid_: Background, filler
 
+**No-findings statement**:
+An explicit, uncited line in an Audience Doc saying the risk checklist turned up nothing. It makes no claim about what the Notebook does, so it is neither a Claim nor Context, and is shown as "No findings".
+_Avoid_: Empty result, all clear
+
 **Citation**:
 A reference from a Claim to a Cell and Line Range, rendered as a link that opens the Source Viewer on those lines.
 _Avoid_: Reference, footnote, source link

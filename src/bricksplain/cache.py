@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from .audience_doc import (
+    CHECKLIST_PROMPT,
     SUPPORT_PROMPT,
     Audience,
     AudienceDoc,
@@ -37,6 +38,7 @@ class DocCache:
             self._model,
             load_prompt(audience.prompt),
             load_prompt(SUPPORT_PROMPT),
+            load_prompt(CHECKLIST_PROMPT),
             audience.key,
             repr(audience.sections),
         )

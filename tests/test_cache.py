@@ -148,3 +148,20 @@ def test_changed_support_prompt_invalidates_every_audience(fixtures, monkeypatch
     )
     generate(client, path)
     assert sorted(llm.seen[3:]) == ["agent", "developer", "manager"]
+
+
+def test_changed_checklist_invalidates_every_audience(fixtures, monkeypatch):
+    import bricksplain.cache as cache_mod
+
+    path = str(fixtures / "small.py")
+    llm = by_audience(ANSWERS)
+    client = make_client(llm, path)
+    generate(client, path)
+    real = cache_mod.load_prompt
+    monkeypatch.setattr(
+        cache_mod,
+        "load_prompt",
+        lambda n: real(n) + " edited" if n == "checklist" else real(n),
+    )
+    generate(client, path)
+    assert sorted(llm.seen[3:]) == ["agent", "developer", "manager"]

@@ -18,6 +18,9 @@ Every fact and concern needs at least one citation:
 Cell numbers and line numbers are exactly as shown in the numbered listing. A citation's lines must lie inside the one cell it names. The quote must appear in those lines exactly as written, so copy it rather than paraphrase. Keep each quote short: one distinctive line, or a fragment of a line, never the whole range. Long multi-line quotes are copied wrongly, and a claim with a wrong quote is thrown away. The lines may still span a wider range than the quote.
 Any fact or concern may also carry "describes_cell": true. Set it when the claim describes what a whole cell does; every citation of such a claim must then cover its cell's full line range, first to last line as shown in the cell header, with the quote still one short fragment taken from within that range (this is the one case where the lines are much wider than the quote). A claim about one line may cite that one line. A claim that spans several cells carries one citation per cell, each with its own range and quote.
 
+{{checklist}}
+Express each finding as a precaution or a runnable check. List invariants as cited facts, list risky areas as concerns with the reason each is risky, and under "verify" give a runnable check (a command, query, assert or output to inspect) drawn only from what the notebook exposes, and cite the lines it relies on.
+
 Rules:
 - Never guess. If behaviour depends on something outside the notebook, such as an included notebook, an external table or a file you cannot see, say it is unknown, and raise it as a concern citing the line that refers to it.
 - Code that is commented out is disabled. Describe it only as disabled, never as something the notebook does.
