@@ -326,3 +326,83 @@ def test_persistent_server_failure_is_logged_and_shown(fixtures, caplog):
         r = generate(make_client(fixtures, client), fixtures)
     assert "HTTP 500" in r.text
     assert any("500" in m for m in caplog.messages)
+
+
+# --- Citation range covers what the Claim asserts -------------------------
+
+
+def whole_cell(cell=2, start=7, end=10, quote="x = 1", text="Cell sets values."):
+    return {**fact(text, cell, start, end, quote), "describes_cell": True}
+
+
+def test_whole_cell_claim_with_full_range_is_accepted(fixtures):
+    llm = FakeLLM(doc(summary=[whole_cell()]))
+    r = generate(make_client(fixtures, llm), fixtures)
+    assert "Cell sets values." in r.text
+    assert "dropped" not in r.text.lower()
+    assert "start=7&amp;end=10" in r.text
+
+
+def test_whole_cell_claim_with_narrow_range_is_rejected_with_reason(fixtures, caplog):
+    llm = FakeLLM(doc(summary=[whole_cell(start=8, end=8)]))
+    with caplog.at_level(logging.INFO, logger="bricksplain"):
+        r = generate(make_client(fixtures, llm), fixtures)
+    assert "Cell sets values." not in r.text
+    assert "1 claim dropped" in r.text
+    retry_prompt = llm.calls[1][1]
+    assert "cell 2" in retry_prompt and "7-10" in retry_prompt
+
+
+def test_retry_recovers_a_narrow_whole_cell_claim(fixtures):
+    class Scripted(FakeLLM):
+        def complete(self, system, user):
+            self.calls.append((system, user))
+            narrow = len(self.calls) == 1
+            return json.dumps(
+                doc(summary=[whole_cell(start=8, end=8) if narrow else whole_cell()])
+            )
+
+    llm = Scripted({})
+    r = generate(make_client(fixtures, llm), fixtures)
+    assert len(llm.calls) == 2
+    assert "Cell sets values." in r.text
+    assert "dropped" not in r.text.lower()
+
+
+def test_multi_cell_claim_renders_one_link_per_cell_and_in_markdown(fixtures):
+    multi = {
+        "type": "fact",
+        "text": "Spans two cells.",
+        "citations": [
+            {"cell": 2, "start": 8, "end": 8, "quote": "x = 1"},
+            {"cell": 4, "start": 18, "end": 18, "quote": "%run ../shared/helper"},
+        ],
+    }
+    client = make_client(fixtures, FakeLLM(doc(summary=[multi])))
+    r = generate(client, fixtures)
+    links = re.findall(r'href="(/source\?[^"]*)"', r.docs["manager"])
+    assert len(links) == 2
+    assert "cell=2" in links[0] and "cell=4" in links[1]
+    job, _ = re.search(r'data-job="(\w+)" data-audience="(\w+)"', r.page).groups()
+    md = client.get(f"/jobs/{job}/manager/download.md").text
+    assert md.count("](/source?") == 2
+    assert "Cell 2, line 8" in md and "Cell 4, line 18" in md
+
+
+def test_narrow_whole_cell_claim_in_a_concern_is_also_rejected(fixtures):
+    bad = {
+        "type": "concern",
+        "severity": "low",
+        "text": "NARROW CONCERN",
+        "describes_cell": True,
+        "citations": [{"cell": 2, "start": 8, "end": 8, "quote": "x = 1"}],
+    }
+    r = generate(make_client(fixtures, FakeLLM(doc(potential_issues=[bad]))), fixtures)
+    assert "NARROW CONCERN" not in r.text
+    assert "1 claim dropped" in r.text
+
+
+def test_unflagged_narrow_claim_still_passes(fixtures):
+    r = generate(make_client(fixtures, FakeLLM(doc(summary=[fact()]))), fixtures)
+    assert "Sets x." in r.text
+    assert "dropped" not in r.text.lower()

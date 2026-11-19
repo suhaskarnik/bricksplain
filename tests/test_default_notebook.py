@@ -43,6 +43,10 @@ def test_sample_notebook_and_data_are_not_git_ignored():
     ]
     assert len(files) > 1
     r = subprocess.run(
-        ["git", "check-ignore", *files], cwd=ROOT, capture_output=True, text=True
+        ["git", "check-ignore", *files],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert r.returncode == 1, f"ignored by git: {r.stdout}"

@@ -77,6 +77,8 @@ class Item(BaseModel):
     type: Literal["fact", "concern", "context"]
     text: str
     severity: Literal["low", "medium", "high"] | None = None
+    # True when the Claim describes a whole Cell, so it must cite the Cell's full range.
+    describes_cell: bool = False
     citations: list[Citation] = []
 
     @model_validator(mode="after")
@@ -84,6 +86,7 @@ class Item(BaseModel):
         if self.type == "context":
             self.citations = []
             self.severity = None
+            self.describes_cell = False
         elif not self.citations:
             raise ValueError("a Claim needs a Citation")
         elif self.type == "concern" and self.severity is None:
@@ -150,6 +153,22 @@ def verify(citation: Citation, notebook: Notebook) -> str | None:
     return None
 
 
+def check_coverage(item: Item, notebook: Notebook) -> list[str]:
+    """Why the cited ranges are too narrow for what the Claim asserts, if they are."""
+    if not item.describes_cell:
+        return []
+    reasons = []
+    for c in item.citations:
+        cell = notebook.cell(c.cell)
+        if cell and (c.start, c.end) != (cell.start, cell.end):
+            reasons.append(
+                f"cell {cell.number} is described as a whole but the citation covers "
+                f"only lines {c.start}-{c.end}; cite its full range "
+                f"{cell.start}-{cell.end}"
+            )
+    return reasons
+
+
 def build_doc(raw: str, notebook: Notebook, audience: Audience) -> AudienceDoc:
     try:
         data = json.loads(raw)
@@ -177,6 +196,8 @@ def build_doc(raw: str, notebook: Notebook, audience: Audience) -> AudienceDoc:
                 dropped += 1
                 continue
             failed = [r for c in item.citations if (r := verify(c, notebook))]
+            if not failed:
+                failed = check_coverage(item, notebook)
             if failed:
                 reason = "; ".join(failed)
                 log.warning("failing claim in %s/%s: %s", audience.key, key, reason)
@@ -212,12 +233,14 @@ def generate_doc(llm: LLMClient, notebook: Notebook, audience: Audience) -> Audi
         audience.key,
         doc.dropped,
     )
+    coverage = any("described as a whole" in f for f in doc.failures)
     feedback = (
         f"{user}\n\nYour previous answer had claims whose citations failed "
         "verification:\n"
         + "\n".join(f"- {f}" for f in doc.failures)
         + "\nReturn the complete corrected JSON document. Every citation must "
-        "use lines inside the cited cell and a quote copied verbatim from them."
+        "use lines inside the cited cell and a quote copied verbatim from them. A claim "
+        'marked "describes_cell" must cite the cell\'s full line range.'
     )
     try:
         retried = build_doc(llm.complete(system, feedback), notebook, audience)
