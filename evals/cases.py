@@ -5,7 +5,7 @@ This is evaluation data only. Nothing here may leak into prompts or app code.
 
 from dataclasses import dataclass
 
-SAMPLE = "testdata/cash_application_engine.py"
+SAMPLE = "examples/cash_application_engine.py"
 GENERALITY = "evals/fixtures/sensor_feature_pipeline.py"
 
 # Vocabulary of the sample Notebook's domain. Docs generated for the generality

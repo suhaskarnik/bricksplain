@@ -6,23 +6,24 @@ It is a localhost web app. Point it at a Notebook path, press Generate, and get 
 
 ## Run it
 
-Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and [`just`](https://just.systems/).
+Requires Python 3.12 and [`uv`](https://docs.astral.sh/uv/). `just` is optional.
 
 ```
-uv sync
 echo 'BRICKSPLAIN_MODEL=groq/<model id>' > .env   # provider is groq, openrouter or google
-just serve        # http://127.0.0.1:8000
+uv run bricksplain        # syncs dependencies if needed, serves http://127.0.0.1:8000
 ```
+
+The input page is prefilled with the committed sample Notebook, `examples/cash_application_engine.py` (data in `examples/sample_data/`), so Generate works straight after cloning and every citation link opens real lines.
 
 | Recipe | What it does |
 |---|---|
-| `just serve` | Run the app, bound to 127.0.0.1 only |
+| `just serve` | Same as `uv run bricksplain`: run the app, bound to 127.0.0.1 only |
 | `just serve-debug` | Same, but logs go to `.logs/` inside the project and LLM responses are logged, so an assistant without access to your home directory can read them |
 | `just test` | Offline test suite: no network, no API keys |
 | `just eval` | Live evaluation against the configured provider (not part of `just test`) |
 | `just lint` / `just fmt` | Ruff check / format |
 
-Note: `just` is a convenience utility here; it can be installed from [GitHub](https://github.com/casey/just). Alternatively, you can open the justfile and run the relevant recipes from the command line.
+Note: the `just` recipes are optional shortcuts; it can be installed from [GitHub](https://github.com/casey/just). Alternatively, you can open the justfile and run the relevant recipes from the command line.
 
 ## Design decisions
 
@@ -88,7 +89,7 @@ There is still one shortcut that was taken though, see the next steps for more d
 - `src/bricksplain/`: the app (`notebook.py` parsing, `audience_doc.py` schema, verification and Markdown, `jobs.py` concurrent generation, `cache.py`, `llm.py`, `config.py`, `logging_setup.py`, `app.py`)
 - `evals/`: Eval Cases, the live runner and the generality fixture
 - `tests/`: the offline suite
-- `testdata/`: the sample Notebook (git-ignored)
+- `examples/`: the sample Notebook and its data
 
 ### 8. Outputs
 

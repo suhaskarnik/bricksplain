@@ -12,7 +12,7 @@ from .config import Config
 from .jobs import JobRunner
 from .llm import LLMClient, OpenAICompatClient
 
-DEFAULT_PATH = "testdata/cash_application_engine.py"
+DEFAULT_PATH = "examples/cash_application_engine.py"
 DEFAULT_CACHE_DIR = ".cache/bricksplain"
 TEMPLATE_DIR = str(Path(__file__).parent / "templates")
 

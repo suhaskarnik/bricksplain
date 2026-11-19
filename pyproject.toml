@@ -30,3 +30,7 @@ dev = [
     "pytest>=9.2.0",
     "ruff>=0.17.5",
 ]
+
+[tool.ruff]
+# The sample Notebook is Databricks source (uses `spark`, `dbutils`), not project code.
+extend-exclude = ["examples"]
