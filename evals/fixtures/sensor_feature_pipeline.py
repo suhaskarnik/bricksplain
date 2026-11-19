@@ -44,3 +44,26 @@ print(model.score(test[FEATURES], test[LABEL]))
 
 out = spark.createDataFrame(pdf)
 out.write.format("delta").mode("overwrite").saveAsTable("iot.turbine_features")
+
+# COMMAND ----------
+
+MAX_NULL_FRAC = 0.05
+STALE_H = 6
+
+# COMMAND ----------
+
+null_frac = pdf[FEATURES].isna().mean().max()
+print("null fraction", null_frac)
+if null_frac > 0.2:
+    print("WARNING too many nulls")
+
+# COMMAND ----------
+
+stale = raw.filter(F.col("age_h") > STALE_H).count()
+print("stale readings", stale)
+
+# COMMAND ----------
+
+STALE_H = 48
+late = raw.filter(F.col("age_h") > STALE_H).count()
+print("late readings", late)
