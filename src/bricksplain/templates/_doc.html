@@ -21,5 +21,11 @@
 {% endfor %}
 </section>
 {% endfor %}
+{% set cov = ds.coverage %}
+<section class="coverage">
+<h3>Coverage</h3>
+<p>Cites {{ cov.cells_cited }} of {{ cov.cells_total }} Cells and {{ cov.lines_cited }} of {{ cov.lines_total }} lines.</p>
+{% if cov.uncited_cells %}<p>Uncited Cells: {% for n in cov.uncited_cells %}<a class="uncited" href="/source?path={{ job.path | urlencode }}&amp;cell={{ n }}">[Cell {{ n }}]</a> {% endfor %}</p>{% endif %}
+</section>
 {% endif %}
 </article>

@@ -110,6 +110,39 @@ class AudienceDoc:
     failures: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class Coverage:
+    """Informational only: what the Citations on a doc's kept Claims reach."""
+
+    cells_cited: int
+    cells_total: int
+    lines_cited: int
+    lines_total: int
+    uncited_cells: tuple[int, ...]
+
+
+def compute_coverage(doc: AudienceDoc, notebook: Notebook) -> Coverage:
+    cited: dict[int, set[int]] = {}
+    for s in doc.sections:
+        for item in s.items:
+            for cite in item.citations:
+                cited.setdefault(cite.cell, set()).update(
+                    range(cite.start, cite.end + 1)
+                )
+    cells = notebook.cells
+    return Coverage(
+        cells_cited=sum(1 for cell in cells if cell.number in cited),
+        cells_total=len(cells),
+        lines_cited=sum(len(v) for v in cited.values()),
+        lines_total=sum(len(cell.lines) for cell in cells),
+        uncited_cells=tuple(cell.number for cell in cells if cell.number not in cited),
+    )
+
+
+def _source_link(path: str, cell: int) -> str:
+    return f"/source?path={quote(path, safe='')}&cell={cell}"
+
+
 def _read_prompt(name: str) -> str:
     return (resources.files("bricksplain") / "prompts" / f"{name}.txt").read_text(
         encoding="utf-8"
@@ -353,7 +386,9 @@ def _cite_label(c: Citation) -> str:
     return f"Cell {c.cell}, {lines}"
 
 
-def to_markdown(doc: AudienceDoc, audience: Audience, path: str) -> str:
+def to_markdown(
+    doc: AudienceDoc, audience: Audience, path: str, coverage: Coverage | None = None
+) -> str:
     """Render an Audience Doc as Markdown; Citations are app-relative links."""
     out = [f"# {audience.title} Audience Doc", "", f"Notebook: `{path}`", ""]
     for s in doc.sections:
@@ -373,5 +408,20 @@ def to_markdown(doc: AudienceDoc, audience: Audience, path: str) -> str:
                 for c in item.citations
             )
             out.append(f"- **{label}** {item.text} {links}".rstrip())
+        out.append("")
+    if coverage:
+        out += [
+            "## Coverage",
+            "",
+            (
+                f"Cites {coverage.cells_cited} of {coverage.cells_total} Cells and "
+                f"{coverage.lines_cited} of {coverage.lines_total} lines."
+            ),
+        ]
+        if coverage.uncited_cells:
+            links = ", ".join(
+                f"[Cell {n}]({_source_link(path, n)})" for n in coverage.uncited_cells
+            )
+            out.append(f"Uncited Cells: {links}")
         out.append("")
     return "\n".join(out)

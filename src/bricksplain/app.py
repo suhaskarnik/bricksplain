@@ -66,7 +66,7 @@ def create_app(
         if ds is None or ds.doc is None:
             raise HTTPException(404, "Unknown job or audience, or doc not ready.")
         return Response(
-            to_markdown(ds.doc, ds.audience, job.path),
+            to_markdown(ds.doc, ds.audience, job.path, ds.coverage),
             media_type="text/markdown; charset=utf-8",
             headers={
                 "Content-Disposition": f'attachment; filename="bricksplain-{audience}.md"'

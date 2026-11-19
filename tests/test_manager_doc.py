@@ -128,7 +128,7 @@ def test_context_has_no_citation_and_is_marked(fixtures):
     r = generate(make_client(fixtures, llm), fixtures)
     assert "Generic framing." in r.text
     assert "Not from the Notebook" in r.text
-    assert "/source?" not in r.text
+    assert "start=" not in r.text  # no Citation link (uncited-Cell links have none)
 
 
 def test_fact_without_citation_is_dropped(fixtures):
@@ -380,12 +380,12 @@ def test_multi_cell_claim_renders_one_link_per_cell_and_in_markdown(fixtures):
     }
     client = make_client(fixtures, FakeLLM(doc(summary=[multi])))
     r = generate(client, fixtures)
-    links = re.findall(r'href="(/source\?[^"]*)"', r.docs["manager"])
+    links = re.findall(r'href="(/source\?[^"]*start=[^"]*)"', r.docs["manager"])
     assert len(links) == 2
     assert "cell=2" in links[0] and "cell=4" in links[1]
     job, _ = re.search(r'data-job="(\w+)" data-audience="(\w+)"', r.page).groups()
     md = client.get(f"/jobs/{job}/manager/download.md").text
-    assert md.count("](/source?") == 2
+    assert md.count("&start=") == 2  # Citation links only, not Coverage links
     assert "Cell 2, line 8" in md and "Cell 4, line 18" in md
 
 

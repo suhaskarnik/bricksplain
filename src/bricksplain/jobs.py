@@ -5,7 +5,15 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 
-from .audience_doc import AUDIENCES, Audience, AudienceDoc, DocError, generate_doc
+from .audience_doc import (
+    AUDIENCES,
+    Audience,
+    AudienceDoc,
+    Coverage,
+    DocError,
+    compute_coverage,
+    generate_doc,
+)
 from .cache import DocCache
 from .llm import LLMClient, LLMError
 from .notebook import Notebook
@@ -20,6 +28,7 @@ class DocState:
     audience: Audience
     state: str = PENDING
     doc: AudienceDoc | None = None
+    coverage: Coverage | None = None
     error: str | None = None
 
 
@@ -63,6 +72,7 @@ class JobRunner:
                 doc = generate_doc(self._llm, job.notebook, ds.audience)
                 self._cache.put(job.notebook, ds.audience, doc)
             ds.doc = doc
+            ds.coverage = compute_coverage(doc, job.notebook)
             ds.state = DONE
         except (LLMError, DocError) as e:
             log.error("%s doc failed: %s", ds.audience.key, e)
