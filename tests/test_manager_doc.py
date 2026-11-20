@@ -39,10 +39,12 @@ def doc(**sections):
 
 
 def make_client(fixtures, llm):
+    routed = llm_for("manager", llm)
     app = create_app(
         Config("groq", "m", "test-key"),
         default_path=str(fixtures / "small.py"),
-        llm_client=llm_for("manager", llm),
+        llm_client=routed,
+        support_judge=routed,
     )
     return TestClient(app)
 
@@ -406,3 +408,23 @@ def test_unflagged_narrow_claim_still_passes(fixtures):
     r = generate(make_client(fixtures, FakeLLM(doc(summary=[fact()]))), fixtures)
     assert "Sets x." in r.text
     assert "dropped" not in r.text.lower()
+
+
+def test_reasoning_effort_sent_to_openrouter_only():
+    import httpx
+
+    from bricksplain.config import Config
+    from bricksplain.llm import OpenAICompatClient
+
+    bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    for provider in ("openrouter", "groq"):
+        OpenAICompatClient(
+            Config(provider, "m", "k", "low"), transport=httpx.MockTransport(handler)
+        ).complete("s", "u")
+    assert bodies[0]["reasoning"] == {"effort": "low"}
+    assert "reasoning" not in bodies[1]

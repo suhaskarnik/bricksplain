@@ -1,6 +1,5 @@
 """Shared helpers: drive Generate over HTTP and wait for every tab to finish."""
 
-import json
 import re
 import time
 from types import SimpleNamespace
@@ -12,20 +11,13 @@ from bricksplain.audience_doc import AUDIENCE_BY_KEY, load_prompt
 from bricksplain.config import Config
 
 EMPTY = "{}"
-SUPPORT_SYSTEM = load_prompt("support")
 
 
-def support_answer(user: str, unsupported: dict[str, str] | None = None) -> str:
-    """A support-check reply: every claim supported, except those whose text
-    contains a key of `unsupported` (value is the reason)."""
-    unsupported = unsupported or {}
-    verdicts = []
-    for c in json.loads(user)["claims"]:
-        why = next((r for k, r in unsupported.items() if k in c["text"]), None)
-        verdicts.append(
-            {"id": c["id"], "supported": why is None, "reason": why or "ok"}
-        )
-    return json.dumps({"verdicts": verdicts})
+class AllSupported:
+    """A SupportJudge that backs every Claim."""
+
+    def score(self, claim, quotes):
+        return 1.0
 
 
 def panel_ids(page: str) -> list[tuple[str, str]]:
@@ -78,16 +70,23 @@ class Only:
         self._llm = llm
 
     def complete(self, system: str, user: str) -> str:
-        if system == SUPPORT_SYSTEM:
-            return support_answer(user)
         if system == self._system:
             return self._llm.complete(system, user)
         return EMPTY
 
+    def score(self, claim, quotes):
+        return 1.0
+
 
 def make_client(config_llm, path: str) -> TestClient:
+    """The fake LLM doubles as the SupportJudge when it has a `score` method."""
     return TestClient(
         create_app(
-            Config("groq", "m", "test-key"), default_path=path, llm_client=config_llm
+            Config("groq", "m", "test-key"),
+            default_path=path,
+            llm_client=config_llm,
+            support_judge=config_llm
+            if hasattr(config_llm, "score")
+            else AllSupported(),
         )
     )

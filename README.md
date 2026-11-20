@@ -9,8 +9,12 @@ It is a localhost web app. Point it at a Notebook path, press Generate, and get 
 Requires Python 3.12 and [`uv`](https://docs.astral.sh/uv/). `just` is optional.
 
 ```
-echo 'BRICKSPLAIN_MODEL=groq/<model id>' > .env   # provider is groq, openrouter or google
+## Run with Gemini-3.5 Flash (default)
 uv run bricksplain        # syncs dependencies if needed, serves http://127.0.0.1:8000
+
+## OR
+
+just serve
 ```
 
 The input page is prefilled with the committed sample Notebook, `examples/cash_application_engine.py` (data in `examples/sample_data/`), so Generate works straight after cloning and every citation link opens real lines.
@@ -23,7 +27,7 @@ The input page is prefilled with the committed sample Notebook, `examples/cash_a
 | `just eval` | Live evaluation against the configured provider (not part of `just test`) |
 | `just lint` / `just fmt` | Ruff check / format |
 
-Note: the `just` recipes are optional shortcuts; it can be installed from [GitHub](https://github.com/casey/just). Alternatively, you can open the justfile and run the relevant recipes from the command line.
+Note: the `just` recipes are optional shortcuts; it can be installed from [GitHub](https://github.com/casey/just)
 
 ## Design decisions
 
@@ -66,13 +70,15 @@ Rejected: *domain-tuned prompts* (better on one Notebook, wrong on the next, and
 
 ### 6. Model in the working directory, keys shared centrally
 
-`BRICKSPLAIN_MODEL=<provider>/<model id>` is read only from the working directory's `.env`, never from the process environment or the central file, because the model is a per-app choice. API keys are shared across the author's apps, so each key resolves from the `.env` under the directory named by `LLM_PROVIDERS` first, then the working directory's `.env`. Only the selected provider's key is required, and errors name the missing key without printing values.
+`BRICKSPLAIN_MODEL=<provider>/<model id>` is read only from the working directory's `.env`, never from the process environment or the central file, because the model is a per-app choice. API keys are shared across the author's apps, so each key resolves from the `.env` under the directory named by `LLM_PROVIDERS` first, then the working directory's `.env`. Only the selected provider's key is required, plus `OPENROUTER_API_KEY` for the Support Check (decision 9), and errors name the missing key without printing values.
 
 Rejected: *one config file for everything* (would duplicate keys per app or force one model on all of them); *the environment for the model* (a stray exported variable silently changes which model is used).
 
 ### 7. Logging with redaction
 
 One file per app start, `log_YYYYMMDD_hhmmss.log`, in `BRICKSPLAIN_LOG_PATH`, else `$XDG_STATE_HOME/bricksplain`, else `~/.local/state/bricksplain`. Level is INFO unless `LOG_LEVEL` says otherwise. It records LLM failures, rate limits with retry timing, retries, citation failures and dropped-Claim counts, and request metadata (provider, model, latency, tokens, status).
+
+Set `BRICKSPLAIN_REASONING_EFFORT` (`none`, `minimal`, `low`, `medium`, `high`) in the working directory `.env` to cap hidden reasoning tokens on OpenRouter models; it is ignored for other providers and unset by default. The request log line includes `reasoning_tokens` when the provider reports it.
 
 Prompts and Notebook content are never logged. A formatter masks the configured key values and anything key-shaped, in the final formatted text, so tracebacks are covered too. LLM response bodies, and the text and quotes of failing Claims, are logged only when `BRICKSPLAIN_LOG_LLM_RESPONSES=1` (which `just serve-debug` sets).
 
@@ -86,13 +92,13 @@ There is still one shortcut that was taken though, see the next steps for more d
 
 ### 9. Support checking and Citation granularity
 
-Verification proves a quote exists, not that the Claim follows from it. After generation and verification, one more LLM call per Audience Doc is given each Claim with its cited quote and returns a supported/unsupported verdict and a short reason. Unsupported Claims join the retry-once-then-drop path of decision 1, so every shown Claim is a Supported Citation. The call is batched (at most one extra call per doc), cached with its doc, and its prompt text is part of the cache key.
+Verification proves a quote exists, not that the Claim follows from it. After generation and verification, each Claim is put to a decision model (Jev, `jev-1.13`, which exists only on OpenRouter) as a Support Check: the cited quote(s) are the `state`, the Claim is the question, and the `noul` answer is the probability that the quote establishes it. A score below 0.5 (a constant, to be tuned against the Eval Cases) makes the Claim unsupported, and unsupported Claims join the retry-once-then-drop path of decision 1, so every shown Claim is a Supported Citation. The decision model is independent of `BRICKSPLAIN_MODEL`, so `OPENROUTER_API_KEY` is required at startup even when another provider writes the docs. The calls run concurrently and the question text, the model alias and the threshold are part of the cache key.
 
 Citations must also be fine enough to check. The schema stays `(cell, start, end, quote)`, but a Claim marked as describing a Cell must cite that Cell's full range, a one-line citation is accepted only for a one-line assertion, and a Claim spanning Cells carries one Citation per Cell. Each doc also reports its Coverage (the share of Cells and lines cited, with uncited Cells linked); it is informational and never feeds back into generation, so it cannot cause padding.
 
-Rejected: *a purpose-built decision model for the check* (extra infrastructure for a first version; the LLM pass is the chosen approach); *Coverage as a pass/fail threshold* (rewards padding with irrelevant citations).
+Rejected: *the same LLM judging its own Claims with a batched yes/no prompt* (the first version; it costs one call per doc but the writer and the judge share blind spots, and the answer is a free-text verdict rather than a calibrated score); *Coverage as a pass/fail threshold* (rewards padding with irrelevant citations).
 
-The trade-off is a second source of error: the checker can wrongly reject a good Claim. Dropped counts are shown. Docs with drops are cached anyway (see decision 2), so an unlucky generation stays until you press Regenerate.
+The trade-offs: the check costs one small paid call per Claim instead of one per doc; the decision model returns a score and no reason, so the retry is told which Claim failed but not why; and it is a second source of error, since it can wrongly reject a good Claim. Dropped counts are shown. A Jev failure fails that Audience Doc rather than showing it unchecked. Docs with drops are cached anyway (see decision 2), so an unlucky generation stays until you press Regenerate.
 
 ## Layout
 

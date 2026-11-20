@@ -6,6 +6,10 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
+REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
+
+SUPPORT_KEY_NAME = "OPENROUTER_API_KEY"
+
 PROVIDER_KEYS = {
     "groq": "GROQ_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
@@ -22,6 +26,10 @@ class Config:
     provider: str
     model: str
     api_key: str = field(repr=False)
+    # OpenRouter only: caps hidden "thinking" tokens. None leaves the model default.
+    reasoning_effort: str | None = None
+    # OpenRouter key for the Support Check's decision model, whatever the provider.
+    support_api_key: str = field(default="", repr=False)
 
 
 def _model_error(detail: str) -> ConfigError:
@@ -50,16 +58,32 @@ def load_config(cwd: Path, environ: Mapping[str, str]) -> Config:
     cwd_env = dotenv_values(cwd / ".env", interpolate=False)
     provider, model = _resolve_model(cwd_env)
     key_name = PROVIDER_KEYS[provider]
+    effort = (cwd_env.get("BRICKSPLAIN_REASONING_EFFORT") or "").strip().lower() or None
+    if effort is not None and effort not in REASONING_EFFORTS:
+        raise ConfigError(
+            f"BRICKSPLAIN_REASONING_EFFORT must be one of: {', '.join(REASONING_EFFORTS)}."
+        )
     sources = []
     if central := environ.get("LLM_PROVIDERS"):
         sources.append(
             dotenv_values(Path(central).expanduser() / ".env", interpolate=False)
         )
     sources.append(cwd_env)
-    for values in sources:
-        if key := values.get(key_name):
-            return Config(provider, model, key)
-    raise ConfigError(
-        f"{key_name} is not set. Put it in the .env under the directory named by "
-        f"LLM_PROVIDERS, or in the .env in the working directory."
+
+    def find(name: str) -> str | None:
+        return next((v[name] for v in sources if v.get(name)), None)
+
+    where = (
+        "Put it in the .env under the directory named by LLM_PROVIDERS, "
+        "or in the .env in the working directory."
     )
+    api_key = find(key_name)
+    if api_key is None:
+        raise ConfigError(f"{key_name} is not set. {where}")
+    support_key = find(SUPPORT_KEY_NAME)
+    if support_key is None:
+        raise ConfigError(
+            f"{SUPPORT_KEY_NAME} is not set. The Support Check's decision model is "
+            f"only available on OpenRouter, whichever provider writes the docs. {where}"
+        )
+    return Config(provider, model, api_key, effort, support_key)

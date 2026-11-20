@@ -8,11 +8,14 @@ from bricksplain import notebook as nb
 from bricksplain.audience_doc import (
     AUDIENCE_BY_KEY,
     AUDIENCES,
+    SUPPORT_PROMPT,
     AudienceDoc,
     generate_doc,
+    load_prompt,
     verify,
 )
 from bricksplain.config import ConfigError, load_config
+from bricksplain.decision import JevJudge
 from bricksplain.llm import OpenAICompatClient
 
 from .cases import (
@@ -102,7 +105,9 @@ def generality_problems(notebook: nb.Notebook, doc: AudienceDoc) -> list[str]:
 
 def main() -> None:
     try:
-        client = OpenAICompatClient(load_config(Path.cwd(), os.environ))
+        config = load_config(Path.cwd(), os.environ)
+        client = OpenAICompatClient(config)
+        judge = JevJudge(config.support_api_key, load_prompt(SUPPORT_PROMPT))
     except ConfigError as e:
         sys.exit(f"Configuration error: {e}")
     docs: dict[tuple[str, str], AudienceDoc] = {}
@@ -111,7 +116,7 @@ def main() -> None:
         key = (case.notebook, case.audience)
         if key not in docs:
             docs[key] = generate_doc(
-                client, nb.load(case.notebook), AUDIENCE_BY_KEY[case.audience]
+                client, judge, nb.load(case.notebook), AUDIENCE_BY_KEY[case.audience]
             )
         ok = surfaced(case, docs[key])
         failed += not ok
@@ -123,7 +128,7 @@ def main() -> None:
 
     notebook = nb.load(GENERALITY)
     for a in AUDIENCES:
-        doc = docs.get((GENERALITY, a.key)) or generate_doc(client, notebook, a)
+        doc = docs.get((GENERALITY, a.key)) or generate_doc(client, judge, notebook, a)
         problems = generality_problems(notebook, doc)
         failed += bool(problems)
         print(f"{'FAIL' if problems else 'PASS'}  generality [{a.key}]")
@@ -141,7 +146,7 @@ def main() -> None:
     def doc_for(path: str, audience: str) -> AudienceDoc:
         if (path, audience) not in docs:
             docs[(path, audience)] = generate_doc(
-                client, nb.load(path), AUDIENCE_BY_KEY[audience]
+                client, judge, nb.load(path), AUDIENCE_BY_KEY[audience]
             )
         return docs[(path, audience)]
 

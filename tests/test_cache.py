@@ -166,3 +166,20 @@ def test_changed_checklist_invalidates_every_audience(fixtures, monkeypatch):
     )
     generate(client, path)
     assert sorted(llm.seen[3:]) == ["agent", "developer", "manager"]
+
+
+def test_changed_support_model_or_threshold_invalidates_every_audience(
+    fixtures, monkeypatch
+):
+    import bricksplain.cache as cache_mod
+
+    path = str(fixtures / "small.py")
+    llm = by_audience(ANSWERS)
+    client = make_client(llm, path)
+    generate(client, path)
+    monkeypatch.setattr(cache_mod, "SUPPORT_MODEL", "jev-9")
+    generate(client, path)
+    assert sorted(llm.seen[3:]) == ["agent", "developer", "manager"]
+    monkeypatch.setattr(cache_mod, "SUPPORT_THRESHOLD", 0.9)
+    generate(client, path)
+    assert sorted(llm.seen[6:]) == ["agent", "developer", "manager"]

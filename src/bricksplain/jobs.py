@@ -15,6 +15,7 @@ from .audience_doc import (
     generate_doc,
 )
 from .cache import DocCache
+from .decision import SupportJudge
 from .llm import LLMClient, LLMError
 from .notebook import Notebook
 
@@ -41,8 +42,9 @@ class Job:
 
 
 class JobRunner:
-    def __init__(self, llm: LLMClient, cache: DocCache):
+    def __init__(self, llm: LLMClient, judge: SupportJudge, cache: DocCache):
         self._llm = llm
+        self._judge = judge
         self._cache = cache
         self._lock = threading.Lock()
         self.jobs: dict[str, Job] = {}
@@ -69,7 +71,7 @@ class JobRunner:
                 log.info("cache bypassed (regenerate): %s", ds.audience.key)
             doc = None if regenerate else self._cache.get(job.notebook, ds.audience)
             if doc is None:
-                doc = generate_doc(self._llm, job.notebook, ds.audience)
+                doc = generate_doc(self._llm, self._judge, job.notebook, ds.audience)
                 self._cache.put(job.notebook, ds.audience, doc)
             ds.doc = doc
             ds.coverage = compute_coverage(doc, job.notebook)

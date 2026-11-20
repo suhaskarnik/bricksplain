@@ -20,6 +20,7 @@ PROVIDERS = {
     "openrouter": {
         "url": "https://openrouter.ai/api/v1/chat/completions",
         "json_mode": True,
+        "reasoning": True,
     },
     "google": {
         "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
@@ -44,6 +45,40 @@ def _retry_wait(resp: httpx.Response) -> float:
 
 class LLMError(Exception):
     """The LLM call failed. Never contains the API key."""
+
+
+def post_with_retry(
+    http: httpx.Client,
+    url: str,
+    body: dict,
+    api_key: str,
+    sleep: Callable[[float], None],
+    label: str,
+) -> httpx.Response:
+    """POST, waiting and retrying on 429 up to MAX_RATE_LIMIT_RETRIES times.
+
+    Returns the first non-429 response; raises LLMError once retries run out."""
+    retries = 0
+    while True:
+        log.info(f"making call to {label}, URL: {url}")
+        resp = http.post(url, json=body, headers={"Authorization": f"Bearer {api_key}"})
+        log.info("received response from %s", label)
+        if resp.status_code != 429:
+            return resp
+        if retries >= MAX_RATE_LIMIT_RETRIES:
+            log.error("llm rate limited; giving up after %d retries", retries)
+            raise LLMError(
+                "The LLM provider is rate limiting requests; try again shortly."
+            )
+        wait = _retry_wait(resp)
+        retries += 1
+        log.warning(
+            "llm rate limited (429); retry %d/%d in %.1fs",
+            retries,
+            MAX_RATE_LIMIT_RETRIES,
+            wait,
+        )
+        sleep(wait)
 
 
 class LLMClient(Protocol):
@@ -75,34 +110,21 @@ class OpenAICompatClient:
         }
         if provider["json_mode"]:
             body["response_format"] = {"type": "json_object"}
+        if provider.get("reasoning") and cfg.reasoning_effort:
+            body["reasoning"] = {"effort": cfg.reasoning_effort}
         started = time.monotonic()
         status: int | str = "error"
         usage: dict = {}
         try:
-            retries = 0
-            while True:
-                resp = self._http.post(
-                    provider["url"],
-                    json=body,
-                    headers={"Authorization": f"Bearer {cfg.api_key}"},
-                )
-                status = resp.status_code
-                if status != 429:
-                    break
-                if retries >= MAX_RATE_LIMIT_RETRIES:
-                    log.error("llm rate limited; giving up after %d retries", retries)
-                    raise LLMError(
-                        "The LLM provider is rate limiting requests; try again shortly."
-                    )
-                wait = _retry_wait(resp)
-                retries += 1
-                log.warning(
-                    "llm rate limited (429); retry %d/%d in %.1fs",
-                    retries,
-                    MAX_RATE_LIMIT_RETRIES,
-                    wait,
-                )
-                self._sleep(wait)
+            resp = post_with_retry(
+                self._http,
+                provider["url"],
+                body,
+                cfg.api_key,
+                self._sleep,
+                label=cfg.provider,
+            )
+            status = resp.status_code
             if status != 200:
                 log.error("llm request failed: HTTP %s", status)
                 raise LLMError(f"The LLM provider returned HTTP {status}.")
@@ -118,11 +140,12 @@ class OpenAICompatClient:
         finally:
             log.info(
                 "llm request provider=%s model=%s status=%s latency=%.2fs "
-                "prompt_tokens=%s completion_tokens=%s",
+                "prompt_tokens=%s completion_tokens=%s reasoning_tokens=%s",
                 cfg.provider,
                 cfg.model,
                 status,
                 time.monotonic() - started,
                 usage.get("prompt_tokens"),
                 usage.get("completion_tokens"),
+                (usage.get("completion_tokens_details") or {}).get("reasoning_tokens"),
             )

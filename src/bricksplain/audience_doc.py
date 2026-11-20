@@ -2,6 +2,7 @@
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from importlib import resources
 from typing import Literal
@@ -9,6 +10,7 @@ from urllib.parse import quote
 
 from pydantic import BaseModel, StrictInt, ValidationError, model_validator
 
+from .decision import SUPPORT_THRESHOLD, SupportJudge
 from .llm import LLMClient, LLMError
 from .notebook import Notebook
 
@@ -265,13 +267,16 @@ def build_doc(raw: str, notebook: Notebook, audience: Audience) -> AudienceDoc:
 
 
 SUPPORT_PROMPT = "support"
+SUPPORT_WORKERS = 8
 
 
-def support_check(llm: LLMClient, doc: AudienceDoc, audience: Audience) -> AudienceDoc:
-    """Drop Claims whose quotes do not back them, using one batched LLM call.
+def support_check(
+    judge: SupportJudge, doc: AudienceDoc, audience: Audience
+) -> AudienceDoc:
+    """Drop Claims whose quotes do not back them, one decision-model call per Claim.
 
-    Raises LLMError/DocError when the call or its answer is unusable: the doc
-    cannot be trusted without the check."""
+    Raises LLMError when any call is unusable: the doc cannot be trusted without
+    the check."""
     claims = [
         (s, i)
         for s in doc.sections
@@ -280,65 +285,65 @@ def support_check(llm: LLMClient, doc: AudienceDoc, audience: Audience) -> Audie
     ]
     if not claims:
         return doc
-    payload = {
-        "claims": [
-            {
-                "id": n,
-                "text": s.items[i].text,
-                "quotes": [c.quote for c in s.items[i].citations],
-            }
-            for n, (s, i) in enumerate(claims)
-        ]
+
+    def score(ref: tuple[Section, int]) -> float:
+        item = ref[0].items[ref[1]]
+        return judge.score(item.text, [c.quote for c in item.citations])
+
+    with ThreadPoolExecutor(max_workers=SUPPORT_WORKERS) as pool:
+        scores = list(pool.map(score, claims))
+    unsupported = {
+        (s.key, i): score
+        for (s, i), score in zip(claims, scores)
+        if score < SUPPORT_THRESHOLD
     }
-    raw = llm.complete(load_prompt(SUPPORT_PROMPT), json.dumps(payload))
-    try:
-        verdicts = {str(v["id"]): v for v in json.loads(raw)["verdicts"]}
-    except (ValueError, KeyError, TypeError) as e:
-        raise DocError("The support check did not return usable verdicts.") from e
-    unsupported: dict[tuple[str, int], str] = {}
-    for n, (s, i) in enumerate(claims):
-        v = verdicts.get(str(n))
-        if isinstance(v, dict) and v.get("supported") is True:
-            continue
-        reason = (v.get("reason") if isinstance(v, dict) else None) or "no verdict"
-        unsupported[(s.key, i)] = str(reason)
     if not unsupported:
         return doc
     sections, failures = [], list(doc.failures)
     for s in doc.sections:
         kept = []
         for i, item in enumerate(s.items):
-            reason = unsupported.get((s.key, i))
-            if reason is None:
+            score = unsupported.get((s.key, i))
+            if score is None:
                 kept.append(item)
                 continue
             log.warning("unsupported claim in %s/%s", audience.key, s.key)
-            # The reason and claim text are LLM output: only logged on opt-in.
+            # The claim text is LLM output and the score is model output: only
+            # logged on opt-in.
             log.warning(
-                "unsupported claim content in %s/%s: text=%r reason=%r",
+                "unsupported claim content in %s/%s: text=%r score=%.2f",
                 audience.key,
                 s.key,
                 item.text,
-                reason,
+                score,
                 extra={"llm_response": True},
             )
-            failures.append(f"{s.key}: not supported by its quote: {reason}")
+            failures.append(
+                f'{s.key}: "{item.text}" is not supported by its quoted text'
+            )
         sections.append(Section(s.key, s.title, kept))
     log.warning("%s: support check dropped %d claim(s)", audience.key, len(unsupported))
     return AudienceDoc(sections, doc.dropped + len(unsupported), failures)
 
 
 def _generate_checked(
-    llm: LLMClient, system: str, user: str, notebook: Notebook, audience: Audience
+    llm: LLMClient,
+    judge: SupportJudge,
+    system: str,
+    user: str,
+    notebook: Notebook,
+    audience: Audience,
 ) -> AudienceDoc:
     doc = build_doc(llm.complete(system, user), notebook, audience)
-    return support_check(llm, doc, audience)
+    return support_check(judge, doc, audience)
 
 
-def generate_doc(llm: LLMClient, notebook: Notebook, audience: Audience) -> AudienceDoc:
+def generate_doc(
+    llm: LLMClient, judge: SupportJudge, notebook: Notebook, audience: Audience
+) -> AudienceDoc:
     """Generate the doc; retry once with failures fed back if any Claim fails."""
     system, user = load_prompt(audience.prompt), numbered_listing(notebook)
-    doc = _generate_checked(llm, system, user, notebook, audience)
+    doc = _generate_checked(llm, judge, system, user, notebook, audience)
     if not doc.dropped:
         return doc
     log.warning(
@@ -364,7 +369,7 @@ def generate_doc(llm: LLMClient, notebook: Notebook, audience: Audience) -> Audi
         )
     )
     try:
-        retried = _generate_checked(llm, system, feedback, notebook, audience)
+        retried = _generate_checked(llm, judge, system, feedback, notebook, audience)
     except (LLMError, DocError) as e:
         log.warning(
             "%s: retry failed (%s); keeping first result",

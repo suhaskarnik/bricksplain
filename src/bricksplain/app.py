@@ -6,9 +6,10 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from . import notebook as nb
-from .audience_doc import to_markdown
+from .audience_doc import SUPPORT_PROMPT, load_prompt, to_markdown
 from .cache import DocCache
 from .config import Config
+from .decision import JevJudge, SupportJudge
 from .jobs import JobRunner
 from .llm import LLMClient, OpenAICompatClient
 
@@ -21,13 +22,17 @@ def create_app(
     config: Config,
     default_path: str = DEFAULT_PATH,
     llm_client: LLMClient | None = None,
+    support_judge: SupportJudge | None = None,
     cache_dir: Path | None = None,
 ) -> FastAPI:
     cache_dir = cache_dir or Path(
         os.environ.get("BRICKSPLAIN_CACHE_PATH") or DEFAULT_CACHE_DIR
     )
     cache = DocCache(cache_dir, f"{config.provider}/{config.model}")
-    runner = JobRunner(llm_client or OpenAICompatClient(config), cache)
+    judge = support_judge or JevJudge(
+        config.support_api_key, load_prompt(SUPPORT_PROMPT)
+    )
+    runner = JobRunner(llm_client or OpenAICompatClient(config), judge, cache)
     app = FastAPI(title="Bricksplain")
     templates = Jinja2Templates(directory=TEMPLATE_DIR)
     templates.env.globals["llm_label"] = f"{config.provider} / {config.model}"

@@ -48,21 +48,25 @@ def test_bad_model_values_fail_with_clear_message(dirs, value):
 
 def test_central_key_wins_over_cwd_key(dirs):
     cwd, central = dirs
-    write_env(cwd, BRICKSPLAIN_MODEL="groq/m", GROQ_API_KEY="cwd-key")
+    write_env(
+        cwd, BRICKSPLAIN_MODEL="groq/m", GROQ_API_KEY="cwd-key", OPENROUTER_API_KEY="o"
+    )
     write_env(central, GROQ_API_KEY="central-key")
     assert load_config(cwd, {"LLM_PROVIDERS": str(central)}).api_key == "central-key"
 
 
 def test_key_falls_back_per_key_to_cwd(dirs):
     cwd, central = dirs
-    write_env(cwd, BRICKSPLAIN_MODEL="groq/m", GROQ_API_KEY="cwd-key")
+    write_env(
+        cwd, BRICKSPLAIN_MODEL="groq/m", GROQ_API_KEY="cwd-key", OPENROUTER_API_KEY="o"
+    )
     write_env(central, OPENROUTER_API_KEY="other")
     assert load_config(cwd, {"LLM_PROVIDERS": str(central)}).api_key == "cwd-key"
 
 
-def test_only_selected_providers_key_is_required(dirs):
+def test_only_selected_providers_key_and_the_support_key_are_required(dirs):
     cwd, _ = dirs
-    write_env(cwd, BRICKSPLAIN_MODEL="groq/m", GROQ_API_KEY="g")
+    write_env(cwd, BRICKSPLAIN_MODEL="groq/m", GROQ_API_KEY="g", OPENROUTER_API_KEY="o")
     assert load_config(cwd, {}).provider == "groq"
 
 
@@ -86,7 +90,7 @@ def test_env_interpolation_cannot_pull_model_or_key_from_process_environment(dir
     cwd, _ = dirs
     cwd.mkdir(parents=True)
     (cwd / ".env").write_text(
-        "BRICKSPLAIN_MODEL=groq/${PROC_MODEL}\nGROQ_API_KEY=${PROC_KEY}\n"
+        "BRICKSPLAIN_MODEL=groq/${PROC_MODEL}\nGROQ_API_KEY=${PROC_KEY}\nOPENROUTER_API_KEY=o\n"
     )
     cfg = load_config(cwd, {"PROC_MODEL": "evil", "PROC_KEY": "leaked"})
     assert cfg.model == "${PROC_MODEL}"
@@ -96,7 +100,7 @@ def test_env_interpolation_cannot_pull_model_or_key_from_process_environment(dir
 def test_google_provider_resolves_model_and_central_key(dirs):
     cwd, central = dirs
     write_env(cwd, BRICKSPLAIN_MODEL="google/gemini-2.5-flash")
-    write_env(central, GOOGLE_API_KEY="g-key")
+    write_env(central, GOOGLE_API_KEY="g-key", OPENROUTER_API_KEY="o")
     cfg = load_config(cwd, {"LLM_PROVIDERS": str(central)})
     assert (cfg.provider, cfg.model, cfg.api_key) == (
         "google",
@@ -110,3 +114,46 @@ def test_google_missing_key_error_names_google_api_key(dirs):
     write_env(cwd, BRICKSPLAIN_MODEL="google/gemini-2.5-flash", GROQ_API_KEY="x")
     with pytest.raises(ConfigError, match="GOOGLE_API_KEY"):
         load_config(cwd, {})
+
+
+def test_reasoning_effort_optional_and_validated(dirs):
+    cwd, _central = dirs
+    write_env(cwd, BRICKSPLAIN_MODEL="openrouter/x", OPENROUTER_API_KEY="k")
+    assert load_config(cwd, {}).reasoning_effort is None
+    write_env(
+        cwd,
+        BRICKSPLAIN_MODEL="openrouter/x",
+        OPENROUTER_API_KEY="k",
+        BRICKSPLAIN_REASONING_EFFORT="Low",
+    )
+    assert load_config(cwd, {}).reasoning_effort == "low"
+    write_env(
+        cwd,
+        BRICKSPLAIN_MODEL="openrouter/x",
+        OPENROUTER_API_KEY="k",
+        BRICKSPLAIN_REASONING_EFFORT="lots",
+    )
+    with pytest.raises(ConfigError, match="BRICKSPLAIN_REASONING_EFFORT"):
+        load_config(cwd, {})
+
+
+def test_support_key_is_required_even_when_another_provider_writes_the_docs(dirs):
+    cwd, _central = dirs
+    write_env(cwd, BRICKSPLAIN_MODEL="google/gemini-2.5-flash", GOOGLE_API_KEY="g")
+    with pytest.raises(ConfigError, match="OPENROUTER_API_KEY"):
+        load_config(cwd, {})
+    write_env(
+        cwd,
+        BRICKSPLAIN_MODEL="google/gemini-2.5-flash",
+        GOOGLE_API_KEY="g",
+        OPENROUTER_API_KEY="o",
+    )
+    cfg = load_config(cwd, {})
+    assert (cfg.api_key, cfg.support_api_key) == ("g", "o")
+
+
+def test_support_key_found_in_central_file(dirs):
+    cwd, central = dirs
+    write_env(cwd, BRICKSPLAIN_MODEL="groq/m", GROQ_API_KEY="g")
+    write_env(central, OPENROUTER_API_KEY="o")
+    assert load_config(cwd, {"LLM_PROVIDERS": str(central)}).support_api_key == "o"

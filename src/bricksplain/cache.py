@@ -14,6 +14,7 @@ from .audience_doc import (
     Section,
     load_prompt,
 )
+from .decision import SUPPORT_MODEL, SUPPORT_THRESHOLD
 from .notebook import Notebook
 
 log = logging.getLogger("bricksplain")
@@ -38,6 +39,8 @@ class DocCache:
             self._model,
             load_prompt(audience.prompt),
             load_prompt(SUPPORT_PROMPT),
+            SUPPORT_MODEL,
+            repr(SUPPORT_THRESHOLD),
             load_prompt(CHECKLIST_PROMPT),
             audience.key,
             repr(audience.sections),

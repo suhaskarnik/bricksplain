@@ -58,6 +58,10 @@ _Avoid_: Valid citation, checked link
 A Verified Citation whose quoted text actually backs the Claim that cites it, not merely appears in the Notebook.
 _Avoid_: Correct citation, valid claim
 
+**Support Check**:
+The judgement, made by a decision model separate from the one writing the Audience Doc, of whether a Claim's quoted text backs it. A Claim that fails it is not a Supported Citation.
+_Avoid_: Validation, verification (that is for Citations), fact-check
+
 **Coverage**:
 The share of a Notebook's Cells and lines that at least one Claim in an Audience Doc cites. It shows what a doc leaves out.
 _Avoid_: Completeness, score

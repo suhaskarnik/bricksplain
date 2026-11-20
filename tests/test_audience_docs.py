@@ -2,12 +2,10 @@ import json
 import threading
 
 from support import (
-    SUPPORT_SYSTEM,
     generate,
     make_client,
     panel,
     panel_ids,
-    support_answer,
     wait_done,
 )
 
@@ -31,9 +29,9 @@ def fact(text, quote="x = 1"):
 def by_audience(mapping, unsupported=None, support=None):
     """An LLM that answers by which Audience's system prompt it is given.
 
-    Support-check calls are recorded in `support_calls`, not `seen`. They are
-    answered by `support(user)` if given, else all-supported except claims whose
-    text contains a key of `unsupported`."""
+    It is also the SupportJudge: each (claim, quotes) it is asked about is recorded
+    in `support_calls`, not `seen`. The score is `support(claim, quotes)` if given,
+    else 0.0 for claims whose text contains a key of `unsupported`, else 1.0."""
     prompts = {load_prompt(a.prompt): a.key for a in AUDIENCES}
 
     class LLM:
@@ -42,13 +40,14 @@ def by_audience(mapping, unsupported=None, support=None):
             self.seen = []
             self.support_calls = []
 
+        def score(self, claim, quotes):
+            with self.lock:
+                self.support_calls.append((claim, quotes))
+            if support:
+                return support(claim, quotes)
+            return 0.0 if any(k in claim for k in (unsupported or {})) else 1.0
+
         def complete(self, system, user):
-            if system == SUPPORT_SYSTEM:
-                with self.lock:
-                    self.support_calls.append(user)
-                if support:
-                    return support(user)
-                return support_answer(user, unsupported)
             key = prompts[system]
             with self.lock:
                 self.seen.append(key)
