@@ -9,11 +9,14 @@
 {% for s in doc.sections %}
 <section>
 <h3>{{ s.title }}</h3>
+{% set instr = s.key in ds.audience.instruction_sections %}
+{% if instr %}<p class="note">Instructions to the reader. Each Citation is verified (the lines exist and contain the quote), but the advice itself is not checked against the code, so trust it less than the other sections.</p>{% endif %}
 {% for item in s.items %}
-<p class="item {{ item.type }}">
+<p class="item {{ item.type }}{% if instr %} instruction{% endif %}">
   {% if item.type == "context" %}<span class="tag">Context &middot; Not from the Notebook</span>
   {% elif item.type == "no_findings" %}<span class="tag">No findings</span>
   {% elif item.type == "concern" %}<span class="tag sev-{{ item.severity }}">Concern &middot; {{ item.severity }}</span>
+  {% elif instr %}<span class="tag unchecked" title="Citation verified; advice not checked against the code">Check &middot; advice not verified</span>
   {% else %}<span class="tag">Fact</span>{% endif %}
   {{ item.text }}
   {% for c in item.citations %}<a class="cite" href="/source?path={{ job.path | urlencode }}&amp;cell={{ c.cell }}&amp;start={{ c.start }}&amp;end={{ c.end }}">[Cell {{ c.cell }}, {{ "line %d" % c.start if c.start == c.end else "lines %d-%d" % (c.start, c.end) }}]</a>{% endfor %}

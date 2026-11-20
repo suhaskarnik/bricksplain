@@ -24,6 +24,10 @@ class Audience:
     title: str
     prompt: str
     sections: tuple[tuple[str, str], ...]
+    # Keys of sections whose items are instructions to the reader ("check that X is
+    # 0"), not statements about the Notebook. Their Citations are verified but the
+    # Support Check does not score them: code cannot establish a recommendation.
+    instruction_sections: tuple[str, ...] = ()
 
 
 AUDIENCES = (
@@ -60,6 +64,7 @@ AUDIENCES = (
             ("risky_areas", "Risky areas"),
             ("verify", "How to verify changes"),
         ),
+        instruction_sections=("verify",),
     ),
 )
 AUDIENCE_BY_KEY = {a.key: a for a in AUDIENCES}
@@ -298,6 +303,8 @@ def support_check(
     The judge sees the full text of each cited Line Range, headed by its Cell and
     lines, not only the quote.
 
+    Items in an Audience's instruction sections are not scored.
+
     With no judge the check is off (see the README's known issue) and the doc is
     returned unchanged. Raises LLMError when any call is unusable: the doc cannot
     be trusted without the check."""
@@ -306,6 +313,7 @@ def support_check(
     claims = [
         (s, i)
         for s in doc.sections
+        if s.key not in audience.instruction_sections
         for i, item in enumerate(s.items)
         if item.type in ("fact", "concern")
     ]
@@ -448,6 +456,13 @@ def generate_doc(
     return doc
 
 
+INSTRUCTION_NOTE = (
+    "_Instructions to the reader. Each Citation is verified (the lines exist and "
+    "contain the quote), but the advice itself is not checked against the code, so "
+    "trust it less than the other sections._"
+)
+
+
 def _cite_label(c: Citation) -> str:
     lines = f"line {c.start}" if c.start == c.end else f"lines {c.start}-{c.end}"
     return f"Cell {c.cell}, {lines}"
@@ -460,6 +475,9 @@ def to_markdown(
     out = [f"# {audience.title} Audience Doc", "", f"Notebook: `{path}`", ""]
     for s in doc.sections:
         out += [f"## {s.title}", ""]
+        instr = s.key in audience.instruction_sections
+        if instr:
+            out += [INSTRUCTION_NOTE, ""]
         for item in s.items:
             if item.type == "context":
                 label = "Context (not from the Notebook)"
@@ -467,6 +485,8 @@ def to_markdown(
                 label = "No findings"
             elif item.type == "concern":
                 label = f"Concern ({item.severity})"
+            elif instr:
+                label = "Check (advice not verified)"
             else:
                 label = "Fact"
             links = " ".join(

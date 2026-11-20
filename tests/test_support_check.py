@@ -213,3 +213,28 @@ def test_retry_that_says_less_does_not_replace_a_fuller_first_pass(fixtures):
     r = generate(make_client(llm, path), path)
     assert llm.seen.count("manager") == 2
     assert "One." in r.docs["manager"] and "Two." in r.docs["manager"]
+
+
+def test_instruction_section_items_are_verified_but_not_scored(fixtures):
+    path = str(fixtures / "small.py")
+    llm = by_audience(
+        {
+            "manager": {},
+            "developer": {},
+            "agent": {
+                "invariants": [fact("Invariant HALTS.")],
+                "verify": [
+                    fact("x must be 1; compare to the last run."),
+                    fact("Bad quote.", quote="not in the cell"),
+                ],
+            },
+        },
+        unsupported={"HALTS": "", "must be": ""},
+    )
+    r = generate(make_client(llm, path), path)
+    agent = r.docs["agent"]
+    assert "Invariant HALTS." not in agent  # scored and dropped
+    assert "x must be 1; compare to the last run." in agent  # not scored
+    assert "Bad quote." not in agent  # its Citation still fails verification
+    # (scored once per generation pass; the bad quote triggers a Citation retry)
+    assert {c for c, _ in llm.support_calls} == {"Invariant HALTS."}
