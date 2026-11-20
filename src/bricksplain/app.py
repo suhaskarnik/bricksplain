@@ -29,8 +29,10 @@ def create_app(
         os.environ.get("BRICKSPLAIN_CACHE_PATH") or DEFAULT_CACHE_DIR
     )
     cache = DocCache(cache_dir, f"{config.provider}/{config.model}")
-    judge = support_judge or JevJudge(
-        config.support_api_key, load_prompt(SUPPORT_PROMPT)
+    judge = support_judge or (
+        JevJudge(config.support_api_key, load_prompt(SUPPORT_PROMPT))
+        if config.support_check
+        else None
     )
     runner = JobRunner(llm_client or OpenAICompatClient(config), judge, cache)
     app = FastAPI(title="Bricksplain")

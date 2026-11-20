@@ -24,8 +24,8 @@ QUESTION_ID = "support"
 
 
 class SupportJudge(Protocol):
-    def score(self, claim: str, quotes: list[str]) -> float:
-        """Probability in [0, 1] that the quotes, together, establish the claim."""
+    def score(self, claim: str, evidence: list[str]) -> float:
+        """Probability in [0, 1] that the evidence texts, together, establish the claim."""
         ...
 
 
@@ -44,10 +44,10 @@ class JevJudge:
         self._sleep = sleep
         self._http = httpx.Client(transport=transport, timeout=timeout)
 
-    def score(self, claim: str, quotes: list[str]) -> float:
+    def score(self, claim: str, evidence: list[str]) -> float:
         body = {
             "model": SUPPORT_MODEL,
-            "state": "\n".join(quotes),
+            "state": "\n".join(evidence),
             "questions": {
                 QUESTION_ID: {
                     "type": "noul",

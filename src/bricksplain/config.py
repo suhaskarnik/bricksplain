@@ -30,6 +30,8 @@ class Config:
     reasoning_effort: str | None = None
     # OpenRouter key for the Support Check's decision model, whatever the provider.
     support_api_key: str = field(default="", repr=False)
+    # Opt-in: BRICKSPLAIN_SUPPORT_CHECK=1 in the working directory .env.
+    support_check: bool = False
 
 
 def _model_error(detail: str) -> ConfigError:
@@ -80,10 +82,18 @@ def load_config(cwd: Path, environ: Mapping[str, str]) -> Config:
     api_key = find(key_name)
     if api_key is None:
         raise ConfigError(f"{key_name} is not set. {where}")
+    enabled = (cwd_env.get("BRICKSPLAIN_SUPPORT_CHECK") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
     support_key = find(SUPPORT_KEY_NAME)
+    if not enabled:
+        return Config(provider, model, api_key, effort, support_key or "", False)
     if support_key is None:
         raise ConfigError(
             f"{SUPPORT_KEY_NAME} is not set. The Support Check's decision model is "
             f"only available on OpenRouter, whichever provider writes the docs. {where}"
         )
-    return Config(provider, model, api_key, effort, support_key)
+    return Config(provider, model, api_key, effort, support_key, True)

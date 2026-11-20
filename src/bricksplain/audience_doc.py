@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from importlib import resources
@@ -12,7 +13,7 @@ from pydantic import BaseModel, StrictInt, ValidationError, model_validator
 
 from .decision import SUPPORT_THRESHOLD, SupportJudge
 from .llm import LLMClient, LLMError
-from .notebook import Notebook
+from .notebook import Cell, Notebook
 
 log = logging.getLogger("bricksplain")
 
@@ -180,6 +181,23 @@ def _norm(s: str) -> str:
     return " ".join(" ".join(lines).split())
 
 
+def cited_text(citation: Citation, cell: Cell) -> str:
+    """The notebook's own text for the cited Line Range (not just the quote)."""
+    first = citation.start - cell.start
+    return "\n".join(cell.lines[first : citation.end - cell.start + 1])
+
+
+def labelled_text(citation: Citation, cell: Cell) -> str:
+    """The cited text under its Cell and lines, so a Claim that names its location
+    (\"in cell 6\") can be matched against evidence that states one."""
+    where = (
+        f"line {citation.start}"
+        if citation.start == citation.end
+        else f"lines {citation.start}-{citation.end}"
+    )
+    return f"Cell {citation.cell}, {where}:\n{cited_text(citation, cell)}"
+
+
 def verify(citation: Citation, notebook: Notebook) -> str | None:
     """Return why the Citation fails, or None when it is a Verified Citation."""
     cell = notebook.cell(citation.cell)
@@ -191,8 +209,7 @@ def verify(citation: Citation, notebook: Notebook) -> str | None:
         or citation.end > cell.end
     ):
         return f"lines {citation.start}-{citation.end} outside cell {cell.number}"
-    first = citation.start - cell.start
-    text = "\n".join(cell.lines[first : citation.end - cell.start + 1])
+    text = cited_text(citation, cell)
     quote = _norm(citation.quote)
     if not quote or quote not in _norm(text):
         return f"quote not found in cell {cell.number} lines {citation.start}-{citation.end}"
@@ -271,12 +288,21 @@ SUPPORT_WORKERS = 8
 
 
 def support_check(
-    judge: SupportJudge, doc: AudienceDoc, audience: Audience
+    judge: SupportJudge | None,
+    doc: AudienceDoc,
+    audience: Audience,
+    notebook: Notebook,
 ) -> AudienceDoc:
-    """Drop Claims whose quotes do not back them, one decision-model call per Claim.
+    """Drop Claims whose cited lines do not back them, one decision-model call per Claim.
 
-    Raises LLMError when any call is unusable: the doc cannot be trusted without
-    the check."""
+    The judge sees the full text of each cited Line Range, headed by its Cell and
+    lines, not only the quote.
+
+    With no judge the check is off (see the README's known issue) and the doc is
+    returned unchanged. Raises LLMError when any call is unusable: the doc cannot
+    be trusted without the check."""
+    if judge is None:
+        return doc
     claims = [
         (s, i)
         for s in doc.sections
@@ -288,10 +314,18 @@ def support_check(
 
     def score(ref: tuple[Section, int]) -> float:
         item = ref[0].items[ref[1]]
-        return judge.score(item.text, [c.quote for c in item.citations])
+        evidence = [
+            labelled_text(c, cell)
+            for c in item.citations
+            if (cell := notebook.cell(c.cell)) is not None
+        ]
+        return judge.score(item.text, evidence)
 
     with ThreadPoolExecutor(max_workers=SUPPORT_WORKERS) as pool:
         scores = list(pool.map(score, claims))
+    for (s, i), score in zip(claims, scores):
+        # No Claim text: scores alone are safe to log, and show the distribution.
+        log.info("support score %s/%s #%d: %.3f", audience.key, s.key, i, score)
     unsupported = {
         (s.key, i): score
         for (s, i), score in zip(claims, scores)
@@ -328,36 +362,54 @@ def support_check(
 
 def _generate_checked(
     llm: LLMClient,
-    judge: SupportJudge,
+    judge: SupportJudge | None,
     system: str,
     user: str,
     notebook: Notebook,
     audience: Audience,
-) -> AudienceDoc:
-    doc = build_doc(llm.complete(system, user), notebook, audience)
-    return support_check(judge, doc, audience)
+) -> tuple[AudienceDoc, AudienceDoc]:
+    """Return (draft, checked): the Citation-verified draft and its Support-Checked doc."""
+    draft = build_doc(llm.complete(system, user), notebook, audience)
+    return draft, support_check(judge, draft, audience, notebook)
+
+
+def _shown_claims(doc: AudienceDoc) -> int:
+    return sum(
+        1 for s in doc.sections for i in s.items if i.type in ("fact", "concern")
+    )
 
 
 def generate_doc(
-    llm: LLMClient, judge: SupportJudge, notebook: Notebook, audience: Audience
+    llm: LLMClient,
+    judge: SupportJudge | None,
+    notebook: Notebook,
+    audience: Audience,
+    on_draft: Callable[[AudienceDoc], None] | None = None,
 ) -> AudienceDoc:
-    """Generate the doc; retry once with failures fed back if any Claim fails."""
+    """Generate the doc; retry once with failures fed back if a Citation check fails.
+
+    Only Citation failures (which come with a precise reason) trigger the retry. A
+    Claim the Support Check drops is not retried: the decision model gives no reason,
+    and a retry spends a full LLM call. It stays dropped and counted; Regenerate
+    tries again.
+
+    `on_draft` receives the Citation-verified draft behind the returned doc, before
+    its Support Check, so a caller can keep the draft without keeping the verdicts."""
     system, user = load_prompt(audience.prompt), numbered_listing(notebook)
-    doc = _generate_checked(llm, judge, system, user, notebook, audience)
-    if not doc.dropped:
+    draft, doc = _generate_checked(llm, judge, system, user, notebook, audience)
+    if not draft.dropped:
+        if on_draft:
+            on_draft(draft)
         return doc
     log.warning(
-        "%s: retrying generation once after %d failing claim(s)",
+        "%s: retrying generation once after %d failing citation(s)",
         audience.key,
-        doc.dropped,
+        draft.dropped,
     )
-    coverage = any(
-        "described as a whole" in f and "not supported by its quote" not in f
-        for f in doc.failures
-    )
+    coverage = any("described as a whole" in f for f in draft.failures)
     feedback = (
         f"{user}\n\nYour previous answer had claims that failed checks:\n"
-        + "\n".join(f"- {f}" for f in doc.failures)
+        + "\n".join(f"- {f}" for f in draft.failures)
         + "\nReturn the complete corrected JSON document. Every citation must "
         "use lines inside the cited cell and a quote copied verbatim from them, "
         "and every claim must follow from its quoted text."
@@ -369,13 +421,17 @@ def generate_doc(
         )
     )
     try:
-        retried = _generate_checked(llm, judge, system, feedback, notebook, audience)
+        retried_draft, retried = _generate_checked(
+            llm, judge, system, feedback, notebook, audience
+        )
     except (LLMError, DocError) as e:
         log.warning(
             "%s: retry failed (%s); keeping first result",
             audience.key,
             type(e).__name__,
         )
+        if on_draft:
+            on_draft(draft)
         return doc
     if retried.dropped:
         log.warning(
@@ -383,7 +439,13 @@ def generate_doc(
             audience.key,
             retried.dropped,
         )
-    return retried if retried.dropped <= doc.dropped else doc
+    # Keep the pass that shows more Claims. Comparing dropped counts would favour a
+    # terse retry that fails nothing because it says almost nothing.
+    if _shown_claims(retried) >= _shown_claims(doc):
+        doc, draft = retried, retried_draft
+    if on_draft:
+        on_draft(draft)
+    return doc
 
 
 def _cite_label(c: Citation) -> str:

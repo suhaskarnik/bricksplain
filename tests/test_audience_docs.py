@@ -18,11 +18,11 @@ DEV = ("notebook_map", "data_flow", "business_rules", "inferred_glossary", "gotc
 AGENT = ("purpose", "invariants", "risky_areas", "verify")
 
 
-def fact(text, quote="x = 1"):
+def fact(text, quote="x = 1", start=8, end=8):
     return {
         "type": "fact",
         "text": text,
-        "citations": [{"cell": 2, "start": 8, "end": 8, "quote": quote}],
+        "citations": [{"cell": 2, "start": start, "end": end, "quote": quote}],
     }
 
 

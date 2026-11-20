@@ -1,4 +1,5 @@
-"""On-disk cache of Audience Docs, one entry per (Notebook, model, prompt, Audience)."""
+"""On-disk cache of generated, Citation-verified Audience Docs (before the Support Check),
+one entry per (Notebook, model, prompt, Audience). Support Check verdicts are never cached."""
 
 import hashlib
 import json
@@ -7,14 +8,12 @@ from pathlib import Path
 
 from .audience_doc import (
     CHECKLIST_PROMPT,
-    SUPPORT_PROMPT,
     Audience,
     AudienceDoc,
     Item,
     Section,
     load_prompt,
 )
-from .decision import SUPPORT_MODEL, SUPPORT_THRESHOLD
 from .notebook import Notebook
 
 log = logging.getLogger("bricksplain")
@@ -38,9 +37,6 @@ class DocCache:
             "\n".join(notebook.lines),
             self._model,
             load_prompt(audience.prompt),
-            load_prompt(SUPPORT_PROMPT),
-            SUPPORT_MODEL,
-            repr(SUPPORT_THRESHOLD),
             load_prompt(CHECKLIST_PROMPT),
             audience.key,
             repr(audience.sections),

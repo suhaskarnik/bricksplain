@@ -13,6 +13,7 @@ from .audience_doc import (
     DocError,
     compute_coverage,
     generate_doc,
+    support_check,
 )
 from .cache import DocCache
 from .decision import SupportJudge
@@ -42,7 +43,7 @@ class Job:
 
 
 class JobRunner:
-    def __init__(self, llm: LLMClient, judge: SupportJudge, cache: DocCache):
+    def __init__(self, llm: LLMClient, judge: SupportJudge | None, cache: DocCache):
         self._llm = llm
         self._judge = judge
         self._cache = cache
@@ -69,10 +70,19 @@ class JobRunner:
         try:
             if regenerate:
                 log.info("cache bypassed (regenerate): %s", ds.audience.key)
-            doc = None if regenerate else self._cache.get(job.notebook, ds.audience)
-            if doc is None:
-                doc = generate_doc(self._llm, self._judge, job.notebook, ds.audience)
-                self._cache.put(job.notebook, ds.audience, doc)
+            # The cache holds the generated, Citation-verified draft, never Jev's
+            # verdicts: the Support Check runs afresh on every load.
+            draft = None if regenerate else self._cache.get(job.notebook, ds.audience)
+            if draft is not None:
+                doc = support_check(self._judge, draft, ds.audience, job.notebook)
+            else:
+                doc = generate_doc(
+                    self._llm,
+                    self._judge,
+                    job.notebook,
+                    ds.audience,
+                    on_draft=lambda d: self._cache.put(job.notebook, ds.audience, d),
+                )
             ds.doc = doc
             ds.coverage = compute_coverage(doc, job.notebook)
             ds.state = DONE

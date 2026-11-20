@@ -137,23 +137,38 @@ def test_reasoning_effort_optional_and_validated(dirs):
         load_config(cwd, {})
 
 
-def test_support_key_is_required_even_when_another_provider_writes_the_docs(dirs):
+def test_support_check_is_off_by_default_and_needs_no_openrouter_key(dirs):
     cwd, _central = dirs
     write_env(cwd, BRICKSPLAIN_MODEL="google/gemini-2.5-flash", GOOGLE_API_KEY="g")
+    cfg = load_config(cwd, {})
+    assert (cfg.api_key, cfg.support_check) == ("g", False)
+
+
+def test_support_key_is_required_when_the_check_is_enabled(dirs):
+    cwd, _central = dirs
+    write_env(
+        cwd,
+        BRICKSPLAIN_MODEL="google/gemini-2.5-flash",
+        GOOGLE_API_KEY="g",
+        BRICKSPLAIN_SUPPORT_CHECK="1",
+    )
     with pytest.raises(ConfigError, match="OPENROUTER_API_KEY"):
         load_config(cwd, {})
     write_env(
         cwd,
         BRICKSPLAIN_MODEL="google/gemini-2.5-flash",
         GOOGLE_API_KEY="g",
+        BRICKSPLAIN_SUPPORT_CHECK="1",
         OPENROUTER_API_KEY="o",
     )
     cfg = load_config(cwd, {})
-    assert (cfg.api_key, cfg.support_api_key) == ("g", "o")
+    assert (cfg.api_key, cfg.support_api_key, cfg.support_check) == ("g", "o", True)
 
 
 def test_support_key_found_in_central_file(dirs):
     cwd, central = dirs
-    write_env(cwd, BRICKSPLAIN_MODEL="groq/m", GROQ_API_KEY="g")
+    write_env(
+        cwd, BRICKSPLAIN_MODEL="groq/m", GROQ_API_KEY="g", BRICKSPLAIN_SUPPORT_CHECK="1"
+    )
     write_env(central, OPENROUTER_API_KEY="o")
     assert load_config(cwd, {"LLM_PROVIDERS": str(central)}).support_api_key == "o"

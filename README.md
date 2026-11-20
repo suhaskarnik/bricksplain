@@ -44,7 +44,7 @@ This is the central bet: it turns "trust the LLM" into "check the evidence in on
 
 ### 2. Caching is cost control
 
-Each Audience Doc costs one LLM call, and the free tiers are rate-limited. Docs are cached on disk, keyed by Notebook content, model string, prompt text and section skeleton, so editing a prompt invalidates old results. Regenerate bypasses the cache. A doc with dropped Claims is cached too: **a deliberate compromise** for a personal project, because every retry spends quota. The dropped count stays visible on the doc, and Regenerate is the way to try again; a production implementation would leave such docs uncached so a flaky generation is not frozen in.
+Each Audience Doc costs one LLM call, and the free tiers are rate-limited. The generated, Citation-verified draft is cached on disk, keyed by Notebook content, model string, prompt text and section skeleton, so editing a prompt invalidates old results. The Support Check (decision 9) is never cached: it runs again on every load, cached or not, so a change to Jev's question, threshold or inputs takes effect at once and the draft is not frozen with old verdicts. A cached draft is not regenerated when the check drops Claims; Regenerate is the way to try again, because every retry spends LLM quota.
 
 Rejected: *no cache* (burns quota on every click); *keying on file path or mtime* (stale after edits, misses after renames); *a database* (a directory of JSON files is enough for one user).
 
@@ -70,7 +70,7 @@ Rejected: *domain-tuned prompts* (better on one Notebook, wrong on the next, and
 
 ### 6. Model in the working directory, keys shared centrally
 
-`BRICKSPLAIN_MODEL=<provider>/<model id>` is read only from the working directory's `.env`, never from the process environment or the central file, because the model is a per-app choice. API keys are shared across the author's apps, so each key resolves from the `.env` under the directory named by `LLM_PROVIDERS` first, then the working directory's `.env`. Only the selected provider's key is required, plus `OPENROUTER_API_KEY` for the Support Check (decision 9), and errors name the missing key without printing values.
+`BRICKSPLAIN_MODEL=<provider>/<model id>` is read only from the working directory's `.env`, never from the process environment or the central file, because the model is a per-app choice. API keys are shared across the author's apps, so each key resolves from the `.env` under the directory named by `LLM_PROVIDERS` first, then the working directory's `.env`. Only the selected provider's key is required, plus `OPENROUTER_API_KEY` when the optional Support Check (decision 9) is switched on, and errors name the missing key without printing values.
 
 Rejected: *one config file for everything* (would duplicate keys per app or force one model on all of them); *the environment for the model* (a stray exported variable silently changes which model is used).
 
@@ -92,13 +92,15 @@ There is still one shortcut that was taken though, see the next steps for more d
 
 ### 9. Support checking and Citation granularity
 
-Verification proves a quote exists, not that the Claim follows from it. After generation and verification, each Claim is put to a decision model (Jev, `jev-1.13`, which exists only on OpenRouter) as a Support Check: the cited quote(s) are the `state`, the Claim is the question, and the `noul` answer is the probability that the quote establishes it. A score below 0.5 (a constant, to be tuned against the Eval Cases) makes the Claim unsupported, and unsupported Claims join the retry-once-then-drop path of decision 1, so every shown Claim is a Supported Citation. The decision model is independent of `BRICKSPLAIN_MODEL`, so `OPENROUTER_API_KEY` is required at startup even when another provider writes the docs. The calls run concurrently and the question text, the model alias and the threshold are part of the cache key.
+**Status: implemented but off by default; see Known issues.** Set `BRICKSPLAIN_SUPPORT_CHECK=1` in the working directory's `.env` (and provide `OPENROUTER_API_KEY`) to switch it on. Without it, every Verified Citation is shown and no decision-model call is made.
+
+Verification proves a quote exists, not that the Claim follows from it. After generation and verification, each Claim is put to a decision model (Jev, `jev-1.13`, which exists only on OpenRouter) as a Support Check: the full text of the cited Line Range(s), not just the quote, each headed `Cell N, lines a-b:` so a Claim that names its Cell can be matched, is the `state`, the Claim is the question, and the `noul` answer is the probability that the quote establishes it. A score below `SUPPORT_THRESHOLD` in `decision.py` (currently 0.5; every score is logged at INFO to tune it against the Eval Cases) makes the Claim unsupported, and an unsupported Claim is dropped and counted, so every shown Claim is a Supported Citation. Only Citation failures (which come with a precise reason) trigger the retry of decision 1; Jev gives a score and no reason, so retrying on its verdicts spent a full LLM call for a worse rewrite, and Regenerate is the way to try again. The decision model is independent of `BRICKSPLAIN_MODEL`, so `OPENROUTER_API_KEY` is required at startup even when another provider writes the docs. The calls run concurrently. Verdicts are not cached (decision 2): only the draft is, so the check is repeated on every load, which costs a few cheap calls and no LLM tokens.
 
 Citations must also be fine enough to check. The schema stays `(cell, start, end, quote)`, but a Claim marked as describing a Cell must cite that Cell's full range, a one-line citation is accepted only for a one-line assertion, and a Claim spanning Cells carries one Citation per Cell. Each doc also reports its Coverage (the share of Cells and lines cited, with uncited Cells linked); it is informational and never feeds back into generation, so it cannot cause padding.
 
 Rejected: *the same LLM judging its own Claims with a batched yes/no prompt* (the first version; it costs one call per doc but the writer and the judge share blind spots, and the answer is a free-text verdict rather than a calibrated score); *Coverage as a pass/fail threshold* (rewards padding with irrelevant citations).
 
-The trade-offs: the check costs one small paid call per Claim instead of one per doc; the decision model returns a score and no reason, so the retry is told which Claim failed but not why; and it is a second source of error, since it can wrongly reject a good Claim. Dropped counts are shown. A Jev failure fails that Audience Doc rather than showing it unchecked. Docs with drops are cached anyway (see decision 2), so an unlucky generation stays until you press Regenerate.
+The trade-offs: the check costs one small paid call per Claim instead of one per doc; the decision model returns a score and no reason, so a dropped Claim cannot be repaired by a targeted retry; and it is a second source of error, since it can wrongly reject a good Claim. Dropped counts are shown. A Jev failure fails that Audience Doc rather than showing it unchecked. A cached draft whose Claims are dropped on a later load is not retried automatically (see decision 2); press Regenerate.
 
 ## Layout
 
@@ -110,6 +112,19 @@ The trade-offs: the check costs one small paid call per Claim instead of one per
 ## Outputs
 
 The code was executed with the provided notebook, and the results are in the `outputs` directory. 
+
+## Known issues
+
+**The Support Check drops too many good Claims, so it is switched off by default.** With `BRICKSPLAIN_SUPPORT_CHECK` unset, a Claim is shown when its Citation is verified (the Cell and lines exist and contain the quote), which proves the quote is real but not that the Claim follows from it. A Claim that cites a print-only line can still say it "halts the run".
+
+What was found while tuning it (Jev, `jev-1.13`, threshold 0.5):
+
+- Jev separates cleanly when the Claim and the evidence match: in a hand-labelled set of 11 Claims, true ones scored 0.75 to 0.94 and false ones 0.02 to 0.14, including print-only "halts the run" Claims.
+- Real generated docs score far lower. On the sample Notebook the developer doc lost 43 of about 100 Claims, nearly all of them the Inferred Glossary entries and `data_flow` Claims. Many dropped Claims are fair: a Claim about two Cells that cites one, a glossary entry that states a purpose its one cited line doesn't show, or "never used" backed only by the definition line.
+- Some are Jev misses. Evidence without its location scored Claims that name a Cell ("defined in cell 3") low. Heading the evidence `Cell N, lines a-b:` kept 85 of 101 Claims instead of 57 without letting the labelled false Claims through, and that is in the code. The count was still too high to ship, and most mid-range scores (0.3 to 0.55) look like noise.
+- Retrying on a Support Check drop cost a full LLM call and was worse than the first pass, so only Citation failures are retried.
+
+Next steps to fix it: rewrite the developer prompt so each glossary entry and `data_flow` Claim states only what its cited lines show and cites every Cell it names; collect labelled Claims from real docs to set the threshold; or replace the decision model with a cheaper LLM judge that returns a reason.
 
 ## Next Steps
 

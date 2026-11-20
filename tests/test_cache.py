@@ -134,7 +134,7 @@ def test_quote_without_magic_prefix_verifies_against_markdown_cell(fixtures):
     assert llm.seen.count("manager") == 1  # no retry: nothing failed
 
 
-def test_changed_support_prompt_invalidates_every_audience(fixtures, monkeypatch):
+def test_changed_support_prompt_does_not_invalidate(fixtures, monkeypatch):
     import bricksplain.cache as cache_mod
 
     path = str(fixtures / "small.py")
@@ -148,7 +148,7 @@ def test_changed_support_prompt_invalidates_every_audience(fixtures, monkeypatch
         lambda n: real(n) + " edited" if n == "support" else real(n),
     )
     generate(client, path)
-    assert sorted(llm.seen[3:]) == ["agent", "developer", "manager"]
+    assert len(llm.seen) == 3  # Jev's question is not part of what is cached
 
 
 def test_changed_checklist_invalidates_every_audience(fixtures, monkeypatch):
@@ -168,18 +168,13 @@ def test_changed_checklist_invalidates_every_audience(fixtures, monkeypatch):
     assert sorted(llm.seen[3:]) == ["agent", "developer", "manager"]
 
 
-def test_changed_support_model_or_threshold_invalidates_every_audience(
-    fixtures, monkeypatch
-):
-    import bricksplain.cache as cache_mod
+def test_support_settings_do_not_invalidate_the_cache(fixtures, monkeypatch):
+    import bricksplain.audience_doc as audience_mod
 
     path = str(fixtures / "small.py")
     llm = by_audience(ANSWERS)
     client = make_client(llm, path)
     generate(client, path)
-    monkeypatch.setattr(cache_mod, "SUPPORT_MODEL", "jev-9")
+    monkeypatch.setattr(audience_mod, "SUPPORT_THRESHOLD", 0.9)
     generate(client, path)
-    assert sorted(llm.seen[3:]) == ["agent", "developer", "manager"]
-    monkeypatch.setattr(cache_mod, "SUPPORT_THRESHOLD", 0.9)
-    generate(client, path)
-    assert sorted(llm.seen[6:]) == ["agent", "developer", "manager"]
+    assert len(llm.seen) == 3  # Jev's verdicts are not cached, so nothing to invalidate

@@ -107,7 +107,11 @@ def main() -> None:
     try:
         config = load_config(Path.cwd(), os.environ)
         client = OpenAICompatClient(config)
-        judge = JevJudge(config.support_api_key, load_prompt(SUPPORT_PROMPT))
+        judge = (
+            JevJudge(config.support_api_key, load_prompt(SUPPORT_PROMPT))
+            if config.support_check
+            else None
+        )
     except ConfigError as e:
         sys.exit(f"Configuration error: {e}")
     docs: dict[tuple[str, str], AudienceDoc] = {}
